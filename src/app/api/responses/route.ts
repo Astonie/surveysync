@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { surveyId, answers, submittedBy, isOffline } = body;
+
+    if (!surveyId || !answers || answers.length === 0) {
+      return NextResponse.json(
+        { error: "Survey ID and answers are required" },
+        { status: 400 }
+      );
+    }
+
+    const survey = await prisma.survey.findUnique({ where: { id: surveyId } });
+    if (!survey || !survey.isPublished) {
+      return NextResponse.json(
+        { error: "Survey not found or not published" },
+        { status: 404 }
+      );
+    }
+
+    const response = await prisma.response.create({
+      data: {
+        surveyId,
+        submittedBy: submittedBy || null,
+        isOffline: isOffline || false,
+        syncedAt: isOffline ? null : new Date(),
+        answers: {
+          create: answers.map(
+            (a: { questionId: string; value: string | number | string[] }) => ({
+              questionId: a.questionId,
+              value: a.value,
+            })
+          ),
+        },
+      },
+      include: { answers: true },
+    });
+
+    return NextResponse.json(response, { status: 201 });
+  } catch (error: any) {
+    console.error("Failed to submit response:", error?.message);
+    return NextResponse.json({ error: error?.message || "Failed to submit" }, { status: 500 });
+  }
+}

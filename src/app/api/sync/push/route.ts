@@ -1,0 +1,78 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { items } = body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json(
+        { error: "No items to sync" },
+        { status: 400 }
+      );
+    }
+
+    const syncedIds: number[] = [];
+    const failedIds: number[] = [];
+
+    for (const item of items) {
+      try {
+        const payload = JSON.parse(item.payload);
+
+        if (item.entityType === "response") {
+          const survey = await prisma.survey.findUnique({
+            where: { id: payload.surveyId },
+          });
+
+          if (!survey || !survey.isPublished) {
+            failedIds.push(item.id);
+            continue;
+          }
+
+          const existingResponse = await prisma.response.findUnique({
+            where: { id: payload.responseId || payload.id },
+          });
+
+          if (existingResponse) {
+            await prisma.response.update({
+              where: { id: existingResponse.id },
+              data: { syncedAt: new Date() },
+            });
+          } else {
+            await prisma.response.create({
+              data: {
+                id: payload.responseId || payload.id,
+                surveyId: payload.surveyId,
+                submittedBy: payload.submittedBy || null,
+                isOffline: true,
+                syncedAt: new Date(),
+                answers: {
+                  create: (payload.answers || []).map(
+                    (a: { questionId: string; value: string | number | string[] }) => ({
+                      questionId: a.questionId,
+                      value: a.value,
+                    })
+                  ),
+                },
+              },
+            });
+          }
+
+          syncedIds.push(item.id);
+        } else {
+          syncedIds.push(item.id);
+        }
+      } catch (err) {
+        failedIds.push(item.id);
+      }
+    }
+
+    return NextResponse.json({ syncedIds, failedIds });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Sync failed" },
+      { status: 500 }
+    );
+  }
+}

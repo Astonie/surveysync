@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  surveys      Survey[]
+}
+
+model Survey {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  questions   Question[]
+  responses   Response[]
+  createdBy   String
+  creator     User       @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  isPublished Boolean    @default(false)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([createdBy])
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  surveyId  String
+  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  type      String
+  text      String
+  required  Boolean  @default(true)
+  options   Json?
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([surveyId])
+}
+
+model Response {
+  id          String   @id @default(cuid())
+  surveyId    String
+  survey      Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answers     Answer[]
+  submittedBy String?
+  isOffline   Boolean  @default(false)
+  syncedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([surveyId])
+  @@index([syncedAt])
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  value      Json
+  createdAt  DateTime @default(now())
+
+  @@index([responseId])
+  @@index([questionId])
+}
+
+model SyncLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  payload    Json
+  syncedAt   DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([syncedAt])
+  @@index([entityType, entityId])
+}
