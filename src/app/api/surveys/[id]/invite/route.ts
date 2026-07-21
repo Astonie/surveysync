@@ -85,7 +85,9 @@ export async function POST(
       },
     });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const host = request.headers.get("host");
+    const protocol = request.headers.get("x-forwarded-proto") || "https";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${protocol}://${host}` : "http://localhost:3000");
     const inviteUrl = `${appUrl}/invite/${token}`;
 
     return NextResponse.json({
