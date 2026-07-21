@@ -122,7 +122,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="font-medium">{survey.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {survey._count?.questions || 0} questions &middot; {survey.myResponses || 0} collected
+                        {survey.questions?.length ?? survey._count?.questions ?? 0} questions &middot; {survey.myResponses || 0} collected
                       </p>
                     </div>
                     <Badge variant={sc.badge}>{sc.label}</Badge>
@@ -160,7 +160,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="font-medium">{survey.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {survey._count?.questions || 0} questions &middot; {survey._count?.responses || 0} responses
+                        {(survey.questions?.length ?? survey._count?.questions ?? 0)} questions &middot; {survey._count?.responses || 0} responses
                       </p>
                     </div>
                     <Badge variant={sc.badge}>{sc.label}</Badge>

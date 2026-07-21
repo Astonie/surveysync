@@ -10,11 +10,13 @@ const navItems = [
     label: "Dashboard",
     href: "/",
     icon: LayoutDashboard,
+    exact: true,
   },
   {
     label: "New Survey",
     href: "/surveys/new",
     icon: FilePlus,
+    exact: true,
   },
   {
     label: "My Surveys",
@@ -25,6 +27,7 @@ const navItems = [
     label: "Settings",
     href: "/settings",
     icon: Settings,
+    exact: true,
   },
 ];
 
@@ -35,9 +38,9 @@ export function Sidebar() {
     <aside className="hidden md:flex w-64 flex-col border-r bg-sidebar p-4">
       <nav className="flex flex-col gap-1">
         {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+          const isActive = item.exact
+            ? pathname === item.href
+            : pathname === item.href || (pathname.startsWith(item.href + "/") && !pathname.startsWith("/surveys/new"));
 
           return (
             <Link
