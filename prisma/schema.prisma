@@ -18,6 +18,7 @@ model User {
   surveys            Survey[]       @relation("ownedSurveys")
   surveyAccess       SurveyAccess[]
   collectedResponses Response[]     @relation("responses")
+  invitations        Invitation[]   @relation("invitations")
 }
 
 model Survey {
@@ -32,6 +33,7 @@ model Survey {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   access      SurveyAccess[]
+  invitations Invitation[]
 
   @@index([createdBy])
 }
@@ -105,4 +107,21 @@ model SyncLog {
 
   @@index([syncedAt])
   @@index([entityType, entityId])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  surveyId  String
+  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  status    String   @default("pending")
+  invitedBy String
+  inviter   User     @relation("invitations", fields: [invitedBy], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([token])
+  @@index([email])
+  @@index([surveyId])
 }

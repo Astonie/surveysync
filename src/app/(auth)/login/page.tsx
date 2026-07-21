@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BarChart3 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite");
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,9 +26,7 @@ export default function LoginPage() {
     setError("");
 
     const url = isRegister ? "/api/auth/register" : "/api/auth/login";
-    const body = isRegister
-      ? { email, password, name }
-      : { email, password };
+    const body = isRegister ? { email, password, name } : { email, password };
 
     try {
       const res = await fetch(url, {
@@ -43,7 +43,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/");
+      router.push(inviteToken ? `/invite/${inviteToken}` : "/");
       router.refresh();
     } catch {
       setError("Network error");
@@ -64,7 +64,7 @@ export default function LoginPage() {
           </CardTitle>
           <CardDescription>
             {isRegister
-              ? "Sign up to start creating surveys"
+              ? "Sign up to start collecting data"
               : "Sign in to manage your surveys"}
           </CardDescription>
         </CardHeader>
@@ -133,5 +133,19 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-secondary/50">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

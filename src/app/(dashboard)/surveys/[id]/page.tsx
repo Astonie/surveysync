@@ -33,16 +33,20 @@ export default function SurveyDetailPage() {
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [collectors, setCollectors] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
   const [collectorEmail, setCollectorEmail] = useState("");
   const [addingCollector, setAddingCollector] = useState(false);
   const [collectorError, setCollectorError] = useState("");
+  const [inviteResult, setInviteResult] = useState<any>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const [surveyRes, accessRes] = await Promise.all([
+        const [surveyRes, accessRes, inviteRes] = await Promise.all([
           fetch(`/api/surveys/${params.id}`),
           fetch(`/api/surveys/${params.id}/access`),
+          fetch(`/api/surveys/${params.id}/invite`),
         ]);
         if (surveyRes.ok) {
           setSurvey(await surveyRes.json());
@@ -53,6 +57,10 @@ export default function SurveyDetailPage() {
         if (accessRes.ok) {
           const data = await accessRes.json();
           setCollectors(data.access || []);
+        }
+        if (inviteRes.ok) {
+          const data = await inviteRes.json();
+          setInvitations(data.invitations || []);
         }
       } finally {
         setLoading(false);
@@ -85,25 +93,39 @@ export default function SurveyDetailPage() {
     }
   }
 
-  async function addCollector() {
+  async function inviteCollector() {
     if (!collectorEmail.trim()) return;
     setAddingCollector(true);
     setCollectorError("");
+    setInviteResult(null);
     try {
-      const res = await fetch(`/api/surveys/${survey.id}/access`, {
+      const res = await fetch(`/api/surveys/${survey.id}/invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: collectorEmail.trim().toLowerCase() }),
       });
       const data = await res.json();
       if (res.ok) {
-        setCollectors([data, ...collectors]);
+        setInviteResult(data);
+        setInvitations([data.invitation, ...invitations]);
         setCollectorEmail("");
       } else {
-        setCollectorError(data.error || "Failed to add");
+        if (data.status === "pending" && data.invitationId) {
+          setInviteResult(data);
+        } else {
+          setCollectorError(data.error || "Failed to send invitation");
+        }
       }
     } finally {
       setAddingCollector(false);
+    }
+  }
+
+  function copyInviteLink() {
+    if (inviteResult?.inviteUrl) {
+      navigator.clipboard.writeText(inviteResult.inviteUrl);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2000);
     }
   }
 
@@ -198,7 +220,7 @@ export default function SurveyDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="h-5 w-5" /> Collectors ({collectors.length})
+            <Users className="h-5 w-5" /> Team ({collectors.length} active)
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -207,22 +229,56 @@ export default function SurveyDetailPage() {
               placeholder="Collector's email address"
               value={collectorEmail}
               onChange={(e) => setCollectorEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addCollector()}
+              onKeyDown={(e) => e.key === "Enter" && inviteCollector()}
               className="flex-1"
             />
-            <Button onClick={addCollector} disabled={addingCollector || !collectorEmail.trim()} className="gap-2">
+            <Button onClick={inviteCollector} disabled={addingCollector || !collectorEmail.trim()} className="gap-2">
               <UserPlus className="h-4 w-4" />
-              {addingCollector ? "Adding..." : "Add"}
+              {addingCollector ? "Inviting..." : "Invite"}
             </Button>
           </div>
-          {collectorError && (
-            <p className="text-sm text-destructive">{collectorError}</p>
-          )}
+          {collectorError && <p className="text-sm text-destructive">{collectorError}</p>}
           <p className="text-xs text-muted-foreground">
-            Collectors must have an account. They can collect data on your behalf — each submission is tracked to them.
+            Invite people by email. They must register with that email to accept.
           </p>
+
+          {inviteResult?.inviteUrl && (
+            <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                Invitation link created!
+              </p>
+              <div className="flex items-center gap-2">
+                <Input readOnly value={inviteResult.inviteUrl} className="text-xs font-mono" />
+                <Button variant="outline" size="sm" onClick={copyInviteLink}>
+                  {copiedInvite ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Share this link with {inviteResult.invitation?.email}. It expires in 7 days.
+              </p>
+            </div>
+          )}
+
+          {invitations.filter((inv) => inv.status === "pending").length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase">Pending Invitations</p>
+              {invitations.filter((inv) => inv.status === "pending").map((inv) => (
+                <div key={inv.id} className="flex items-center justify-between p-3 border border-dashed rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium">{inv.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Sent {new Date(inv.createdAt).toLocaleDateString()} · Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Badge variant="secondary">Pending</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
           {collectors.length > 0 && (
             <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase">Active Collectors</p>
               {collectors.map((c) => (
                 <div key={c.userId} className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
