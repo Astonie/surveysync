@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { surveyId, answers, submittedBy, isOffline } = body;
+    const { surveyId, answers, isOffline } = body;
 
     if (!surveyId || !answers || answers.length === 0) {
       return NextResponse.json(
@@ -21,10 +22,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const user = await getSession();
+
     const response = await prisma.response.create({
       data: {
         surveyId,
-        submittedBy: submittedBy || null,
+        submittedById: user?.id || null,
         isOffline: isOffline || false,
         syncedAt: isOffline ? null : new Date(),
         answers: {

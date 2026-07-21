@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const user = await getSession();
     const syncedIds: number[] = [];
     const failedIds: number[] = [];
 
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
               data: {
                 id: payload.responseId || payload.id,
                 surveyId: payload.surveyId,
-                submittedBy: payload.submittedBy || null,
+                submittedById: user?.id || null,
                 isOffline: true,
                 syncedAt: new Date(),
                 answers: {
@@ -63,13 +65,13 @@ export async function POST(request: NextRequest) {
         } else {
           syncedIds.push(item.id);
         }
-      } catch (err) {
+      } catch {
         failedIds.push(item.id);
       }
     }
 
     return NextResponse.json({ syncedIds, failedIds });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Sync failed" },
       { status: 500 }

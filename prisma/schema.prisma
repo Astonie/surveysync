@@ -9,28 +9,45 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  name         String?
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  surveys      Survey[]
+  id                 String         @id @default(cuid())
+  email              String         @unique
+  name               String?
+  passwordHash       String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  surveys            Survey[]       @relation("ownedSurveys")
+  surveyAccess       SurveyAccess[]
+  collectedResponses Response[]     @relation("responses")
 }
 
 model Survey {
-  id          String     @id @default(cuid())
+  id          String         @id @default(cuid())
   title       String
   description String?
   questions   Question[]
   responses   Response[]
   createdBy   String
-  creator     User       @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  status      String     @default("draft")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  creator     User           @relation("ownedSurveys", fields: [createdBy], references: [id], onDelete: Cascade)
+  status      String         @default("draft")
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  access      SurveyAccess[]
 
   @@index([createdBy])
+}
+
+model SurveyAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  surveyId  String
+  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  role      String   @default("collector")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, surveyId])
+  @@index([surveyId])
+  @@index([userId])
 }
 
 model Question {
@@ -49,18 +66,20 @@ model Question {
 }
 
 model Response {
-  id          String   @id @default(cuid())
-  surveyId    String
-  survey      Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  answers     Answer[]
-  submittedBy String?
-  isOffline   Boolean  @default(false)
-  syncedAt    DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(cuid())
+  surveyId      String
+  survey        Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answers       Answer[]
+  submittedById String?
+  collector     User?     @relation("responses", fields: [submittedById], references: [id], onDelete: SetNull)
+  isOffline     Boolean   @default(false)
+  syncedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([surveyId])
   @@index([syncedAt])
+  @@index([submittedById])
 }
 
 model Answer {
@@ -76,13 +95,13 @@ model Answer {
 }
 
 model SyncLog {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   entityType String
   entityId   String
   action     String
   payload    Json
   syncedAt   DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([syncedAt])
   @@index([entityType, entityId])

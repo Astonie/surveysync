@@ -24,7 +24,10 @@ export async function GET(
 
     const responses = await prisma.response.findMany({
       where: { surveyId },
-      include: { answers: true },
+      include: {
+        answers: true,
+        collector: { select: { id: true, email: true, name: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
 

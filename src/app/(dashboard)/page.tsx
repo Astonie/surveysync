@@ -5,38 +5,34 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FilePlus, List, Users, WifiOff } from "lucide-react";
+import { FilePlus, List, Users, WifiOff, ClipboardList } from "lucide-react";
 import { useOffline } from "@/providers/OfflineProvider";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState({
-    totalSurveys: 0,
-    totalResponses: 0,
-    activeSurveys: 0,
-    offlineResponses: 0,
-  });
-  const [recentSurveys, setRecentSurveys] = useState<any[]>([]);
+  const [ownedSurveys, setOwnedSurveys] = useState<any[]>([]);
+  const [assignedSurveys, setAssignedSurveys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { isOnline, pendingCount } = useOffline();
+  const { pendingCount } = useOffline();
+
+  const allSurveys = [...ownedSurveys, ...assignedSurveys];
+  const totalResponses = allSurveys.reduce((acc, s) => acc + (s._count?.responses || 0), 0);
+  const activeSurveys = allSurveys.filter((s) => s.status === "active").length;
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/surveys");
-        if (res.ok) {
-          const data = await res.json();
-          setRecentSurveys(data.surveys?.slice(0, 5) || []);
-          setStats({
-            totalSurveys: data.surveys?.length || 0,
-            totalResponses: data.surveys?.reduce(
-              (acc: number, s: any) => acc + (s._count?.responses || 0),
-              0
-            ) || 0,
-            activeSurveys:
-              data.surveys?.filter((s: any) => s.status === "active").length || 0,
-            offlineResponses: 0,
-          });
+        const [ownedRes, assignedRes] = await Promise.all([
+          fetch("/api/surveys"),
+          fetch("/api/collector/surveys"),
+        ]);
+        if (ownedRes.ok) {
+          const data = await ownedRes.json();
+          setOwnedSurveys(data.surveys || []);
+        }
+        if (assignedRes.ok) {
+          const data = await assignedRes.json();
+          setAssignedSurveys(data.surveys || []);
         }
       } catch {
       } finally {
@@ -55,15 +51,10 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your surveys and responses
-          </p>
+          <p className="text-muted-foreground">Overview of your surveys and responses</p>
         </div>
         <Link href="/surveys/new">
-          <Button className="gap-2">
-            <FilePlus className="h-4 w-4" />
-            New Survey
-          </Button>
+          <Button className="gap-2"><FilePlus className="h-4 w-4" /> New Survey</Button>
         </Link>
       </div>
 
@@ -73,7 +64,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Surveys</p>
-                <p className="text-3xl font-bold">{stats.totalSurveys}</p>
+                <p className="text-3xl font-bold">{allSurveys.length}</p>
               </div>
               <List className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -84,7 +75,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Responses</p>
-                <p className="text-3xl font-bold">{stats.totalResponses}</p>
+                <p className="text-3xl font-bold">{totalResponses}</p>
               </div>
               <Users className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -95,7 +86,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Active</p>
-                <p className="text-3xl font-bold">{stats.activeSurveys}</p>
+                <p className="text-3xl font-bold">{activeSurveys}</p>
               </div>
               <Badge variant="success" className="text-xs">Live</Badge>
             </div>
@@ -114,47 +105,65 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {assignedSurveys.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" /> Assigned to Me ({assignedSurveys.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {assignedSurveys.map((survey: any) => {
+                const sc = getStatusConfig(survey.status);
+                return (
+                  <Link key={survey.id} href={`/collect/${survey.id}`} target="_blank"
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors">
+                    <div>
+                      <p className="font-medium">{survey.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {survey._count?.questions || 0} questions &middot; {survey.myResponses || 0} collected
+                      </p>
+                    </div>
+                    <Badge variant={sc.badge}>{sc.label}</Badge>
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle>Recent Surveys</CardTitle>
+          <CardTitle>My Surveys ({ownedSurveys.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
-          ) : recentSurveys.length === 0 ? (
+          ) : ownedSurveys.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground mb-4">
-                No surveys yet. Create your first one!
-              </p>
+              <p className="text-muted-foreground mb-4">No surveys yet. Create your first one!</p>
               <Link href="/surveys/new">
-                <Button>
-                  <FilePlus className="h-4 w-4 mr-2" />
-                  Create Survey
-                </Button>
+                <Button><FilePlus className="h-4 w-4 mr-2" /> Create Survey</Button>
               </Link>
             </div>
           ) : (
             <div className="space-y-3">
-              {recentSurveys.map((survey: any) => {
+              {ownedSurveys.map((survey: any) => {
                 const sc = getStatusConfig(survey.status);
                 return (
-                  <Link
-                    key={survey.id}
-                    href={`/surveys/${survey.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors"
-                  >
+                  <Link key={survey.id} href={`/surveys/${survey.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors">
                     <div>
                       <p className="font-medium">{survey.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {survey._count?.questions || 0} questions &middot;{" "}
-                        {survey._count?.responses || 0} responses
+                        {survey._count?.questions || 0} questions &middot; {survey._count?.responses || 0} responses
                       </p>
                     </div>
-                    <Badge variant={sc.badge}>
-                      {sc.label}
-                    </Badge>
+                    <Badge variant={sc.badge}>{sc.label}</Badge>
                   </Link>
                 );
               })}
