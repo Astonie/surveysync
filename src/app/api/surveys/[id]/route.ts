@@ -38,7 +38,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, questions, isPublished } = body;
+    const { title, description, questions, status } = body;
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -57,7 +57,7 @@ export async function PUT(
       data: {
         title: title ?? existing.title,
         description: description !== undefined ? description : existing.description,
-        isPublished: isPublished !== undefined ? isPublished : existing.isPublished,
+        status: status !== undefined ? status : existing.status,
         questions: questions
           ? {
               create: questions.map(

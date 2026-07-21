@@ -31,6 +31,7 @@ interface Survey {
   title: string;
   description: string | null;
   questions: Question[];
+  status: string;
 }
 
 export default function CollectPage() {
@@ -58,6 +59,7 @@ export default function CollectPage() {
             title: localSurvey.title,
             description: localSurvey.description,
             questions: JSON.parse(localSurvey.questions),
+            status: localSurvey.status,
           });
           setLoading(false);
           return;
@@ -67,17 +69,15 @@ export default function CollectPage() {
           const res = await fetch(`/api/surveys/${surveyId}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.isPublished) {
-              setSurvey(data);
+            setSurvey(data);
               await db.surveys.put({
                 id: data.id,
                 title: data.title,
                 description: data.description,
                 questions: JSON.stringify(data.questions),
-                isPublished: true,
+                status: data.status,
                 syncedAt: new Date().toISOString(),
               });
-            }
           }
         }
       } catch {
@@ -214,7 +214,43 @@ export default function CollectPage() {
             <p className="text-muted-foreground">
               {!navigator.onLine
                 ? "You're offline and this survey hasn't been cached yet."
-                : "This survey doesn't exist or hasn't been published."}
+                : "This survey doesn't exist or isn't accepting responses."}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (survey.status === "paused") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-secondary/30">
+        <Card className="max-w-md w-full mx-4">
+          <CardContent className="py-12 text-center">
+            <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-yellow-100 flex items-center justify-center">
+              <WifiOff className="h-8 w-8 text-yellow-600" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Survey Paused</h2>
+            <p className="text-muted-foreground">
+              This survey is temporarily paused and not accepting responses. Please check back later.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (survey.status === "closed") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-secondary/30">
+        <Card className="max-w-md w-full mx-4">
+          <CardContent className="py-12 text-center">
+            <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+              <CheckCircle className="h-8 w-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Survey Closed</h2>
+            <p className="text-muted-foreground">
+              This survey has been closed and is no longer accepting responses.
             </p>
           </CardContent>
         </Card>

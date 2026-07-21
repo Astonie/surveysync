@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
             where: { id: payload.surveyId },
           });
 
-          if (!survey || !survey.isPublished) {
+          if (!survey || survey.status !== "active") {
             failedIds.push(item.id);
             continue;
           }

@@ -12,9 +12,10 @@ export async function GET() {
     const surveys = await prisma.survey.findMany({
       where: { createdBy: user.id },
       include: {
-        _count: { select: { questions: true, responses: true } },
+        questions: true,
+        _count: { select: { responses: true } },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json({ surveys });
@@ -31,11 +32,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, questions, isPublished } = body;
+    const { title, description, questions, status } = body;
 
     if (!title || !questions || questions.length === 0) {
       return NextResponse.json(
-        { error: "Title and at least one question are required" },
+        { error: "Title and questions are required" },
         { status: 400 }
       );
     }
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       data: {
         title,
         description: description || null,
-        isPublished: isPublished || false,
+        status: status || "draft",
         createdBy: user.id,
         questions: {
           create: questions.map(
@@ -63,6 +64,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(survey, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to create survey" }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Failed to create survey" },
+      { status: 500 }
+    );
   }
 }

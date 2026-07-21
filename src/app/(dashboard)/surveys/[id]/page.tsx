@@ -14,10 +14,13 @@ import {
   ExternalLink,
   Copy,
   CheckCircle,
+  Pause,
+  Play,
+  StopCircle,
   Globe,
-  EyeOff,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 
 export default function SurveyDetailPage() {
   const params = useParams();
@@ -25,7 +28,7 @@ export default function SurveyDetailPage() {
   const [survey, setSurvey] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [toggling, setToggling] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -53,19 +56,19 @@ export default function SurveyDetailPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function togglePublish() {
-    setToggling(true);
+  async function updateStatus(newStatus: SurveyStatus) {
+    setUpdating(true);
     try {
       const res = await fetch(`/api/surveys/${survey.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPublished: !survey.isPublished }),
+        body: JSON.stringify({ status: newStatus }),
       });
       if (res.ok) {
-        setSurvey({ ...survey, isPublished: !survey.isPublished });
+        setSurvey({ ...survey, status: newStatus });
       }
     } finally {
-      setToggling(false);
+      setUpdating(false);
     }
   }
 
@@ -80,6 +83,11 @@ export default function SurveyDetailPage() {
   if (!survey) return null;
 
   const collectUrl = getCollectUrl();
+  const sc = SURVEY_STATUS_CONFIG[survey.status as SurveyStatus] || SURVEY_STATUS_CONFIG.draft;
+  const isActive = survey.status === "active";
+  const isDraft = survey.status === "draft";
+  const isPaused = survey.status === "paused";
+  const isClosed = survey.status === "closed";
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -93,27 +101,73 @@ export default function SurveyDetailPage() {
             <p className="text-muted-foreground">{survey.description}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={survey.isPublished ? "success" : "secondary"}>
-            {survey.isPublished ? "Published" : "Draft"}
-          </Badge>
-          <Button
-            variant={survey.isPublished ? "outline" : "default"}
-            size="sm"
-            onClick={togglePublish}
-            disabled={toggling}
-            className="gap-1"
-          >
-            {survey.isPublished ? (
-              <><EyeOff className="h-3 w-3" /> Unpublish</>
-            ) : (
-              <><Globe className="h-3 w-3" /> Publish</>
-            )}
-          </Button>
-        </div>
+        <Badge variant={sc.badge} className="text-sm">
+          {sc.label}
+        </Badge>
       </div>
 
-      {survey.isPublished && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Survey Controls</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            {isDraft && (
+              <Button
+                onClick={() => updateStatus("active")}
+                disabled={updating}
+                className="gap-2"
+              >
+                <Globe className="h-4 w-4" />
+                Activate Survey
+              </Button>
+            )}
+            {isActive && (
+              <Button
+                variant="outline"
+                onClick={() => updateStatus("paused")}
+                disabled={updating}
+                className="gap-2"
+              >
+                <Pause className="h-4 w-4" />
+                Pause
+              </Button>
+            )}
+            {isPaused && (
+              <Button
+                onClick={() => updateStatus("active")}
+                disabled={updating}
+                className="gap-2"
+              >
+                <Play className="h-4 w-4" />
+                Resume
+              </Button>
+            )}
+            {(isActive || isPaused) && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (confirm("Close this survey? It will stop accepting all new responses.")) {
+                    updateStatus("closed");
+                  }
+                }}
+                disabled={updating}
+                className="gap-2"
+              >
+                <StopCircle className="h-4 w-4" />
+                Close Survey
+              </Button>
+            )}
+            {isClosed && (
+              <p className="text-sm text-muted-foreground">
+                This survey is closed. Duplicate it to collect new responses.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {(isActive || isPaused) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Share This Survey</CardTitle>
@@ -146,6 +200,11 @@ export default function SurveyDetailPage() {
                     </Button>
                   </Link>
                 </div>
+                {isPaused && (
+                  <p className="text-xs text-yellow-600">
+                    Survey is paused — respondents will see a "paused" message.
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

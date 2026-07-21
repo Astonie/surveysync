@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FilePlus, List, Users, WifiOff } from "lucide-react";
 import { useOffline } from "@/providers/OfflineProvider";
+import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalSurveys: 0,
     totalResponses: 0,
-    publishedSurveys: 0,
+    activeSurveys: 0,
     offlineResponses: 0,
   });
   const [recentSurveys, setRecentSurveys] = useState<any[]>([]);
@@ -32,8 +33,8 @@ export default function DashboardPage() {
               (acc: number, s: any) => acc + (s._count?.responses || 0),
               0
             ) || 0,
-            publishedSurveys:
-              data.surveys?.filter((s: any) => s.isPublished).length || 0,
+            activeSurveys:
+              data.surveys?.filter((s: any) => s.status === "active").length || 0,
             offlineResponses: 0,
           });
         }
@@ -44,6 +45,10 @@ export default function DashboardPage() {
     }
     load();
   }, []);
+
+  function getStatusConfig(status: string) {
+    return SURVEY_STATUS_CONFIG[status as SurveyStatus] || SURVEY_STATUS_CONFIG.draft;
+  }
 
   return (
     <div className="space-y-6">
@@ -89,8 +94,8 @@ export default function DashboardPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Published</p>
-                <p className="text-3xl font-bold">{stats.publishedSurveys}</p>
+                <p className="text-sm text-muted-foreground">Active</p>
+                <p className="text-3xl font-bold">{stats.activeSurveys}</p>
               </div>
               <Badge variant="success" className="text-xs">Live</Badge>
             </div>
@@ -132,24 +137,27 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {recentSurveys.map((survey: any) => (
-                <Link
-                  key={survey.id}
-                  href={`/surveys/${survey.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors"
-                >
-                  <div>
-                    <p className="font-medium">{survey.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {survey._count?.questions || 0} questions &middot;{" "}
-                      {survey._count?.responses || 0} responses
-                    </p>
-                  </div>
-                  <Badge variant={survey.isPublished ? "success" : "secondary"}>
-                    {survey.isPublished ? "Published" : "Draft"}
-                  </Badge>
-                </Link>
-              ))}
+              {recentSurveys.map((survey: any) => {
+                const sc = getStatusConfig(survey.status);
+                return (
+                  <Link
+                    key={survey.id}
+                    href={`/surveys/${survey.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{survey.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {survey._count?.questions || 0} questions &middot;{" "}
+                        {survey._count?.responses || 0} responses
+                      </p>
+                    </div>
+                    <Badge variant={sc.badge}>
+                      {sc.label}
+                    </Badge>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </CardContent>

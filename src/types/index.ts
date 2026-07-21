@@ -6,6 +6,8 @@ export type QuestionType =
   | "DROPDOWN"
   | "DATE_INPUT";
 
+export type SurveyStatus = "draft" | "active" | "paused" | "closed";
+
 export interface Question {
   id: string;
   surveyId: string;
@@ -25,8 +27,7 @@ export interface Survey {
   questions: Question[];
   responses: Response[];
   createdBy: string;
-  isPublished: boolean;
-  isActive: boolean;
+  status: SurveyStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,8 +40,7 @@ export interface SurveyListItem {
     questions: number;
     responses: number;
   };
-  isPublished: boolean;
-  isActive: boolean;
+  status: SurveyStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,3 +99,10 @@ export interface SyncResult {
   conflicts: number;
   errors: string[];
 }
+
+export const SURVEY_STATUS_CONFIG: Record<SurveyStatus, { label: string; color: string; badge: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" }> = {
+  draft: { label: "Draft", color: "text-gray-500", badge: "secondary" },
+  active: { label: "Active", color: "text-green-600", badge: "success" },
+  paused: { label: "Paused", color: "text-yellow-600", badge: "warning" },
+  closed: { label: "Closed", color: "text-red-600", badge: "destructive" },
+};

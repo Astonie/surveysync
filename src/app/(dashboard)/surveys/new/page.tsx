@@ -237,7 +237,7 @@ export default function NewSurveyPage() {
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
-      isPublished: publish,
+      status: publish ? "active" : "draft",
       questions: questions.map((q, i) => ({
         type: q.type,
         text: q.text.trim(),

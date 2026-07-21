@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
     }
 
     const survey = await prisma.survey.findUnique({ where: { id: surveyId } });
-    if (!survey || !survey.isPublished) {
+    if (!survey || survey.status !== "active") {
       return NextResponse.json(
-        { error: "Survey not found or not published" },
+        { error: "Survey not found or not accepting responses" },
         { status: 404 }
       );
     }

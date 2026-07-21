@@ -11,13 +11,14 @@ export function useOfflineStorage() {
       title: string;
       description: string | null;
       questions: Question[];
+      status?: string;
     }) => {
       await db.surveys.put({
         id: survey.id,
         title: survey.title,
         description: survey.description,
         questions: JSON.stringify(survey.questions),
-        isPublished: true,
+        status: survey.status || "active",
         syncedAt: new Date().toISOString(),
       });
     },

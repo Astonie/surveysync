@@ -31,6 +31,7 @@ export const surveySchema = z.object({
   description: z.string().max(2000).optional(),
   questions: z.array(questionSchema).min(1, "At least one question is required"),
   isPublished: z.boolean().default(false),
+  status: z.enum(["draft", "active", "paused", "closed"]).default("draft"),
 });
 
 export const answerSchema = z.object({

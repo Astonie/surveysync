@@ -1,15 +1,15 @@
-import Dexie, { type EntityTable } from "dexie";
+import { Dexie, type Table } from "dexie";
 
-export interface DexieSurvey {
+interface OfflineSurveyRecord {
   id: string;
   title: string;
   description: string | null;
   questions: string;
-  isPublished: boolean;
+  status: string;
   syncedAt: string | null;
 }
 
-export interface DexieResponse {
+interface OfflineResponseRecord {
   id: string;
   surveyId: string;
   answers: string;
@@ -17,8 +17,8 @@ export interface DexieResponse {
   synced: boolean;
 }
 
-export interface DexieSyncQueue {
-  id: number;
+interface SyncQueueRecord {
+  id?: number;
   entityType: string;
   entityId: string;
   action: string;
@@ -27,16 +27,19 @@ export interface DexieSyncQueue {
   attempts: number;
 }
 
-const db = new Dexie("SurveySyncDB") as Dexie & {
-  surveys: EntityTable<DexieSurvey, "id">;
-  responses: EntityTable<DexieResponse, "id">;
-  syncQueue: EntityTable<DexieSyncQueue, "id">;
-};
+class SurveySyncDB extends Dexie {
+  surveys!: Table<OfflineSurveyRecord>;
+  responses!: Table<OfflineResponseRecord>;
+  syncQueue!: Table<SyncQueueRecord>;
 
-db.version(1).stores({
-  surveys: "id, title, syncedAt",
-  responses: "id, surveyId, synced, createdAt",
-  syncQueue: "++id, entityType, entityId, action, createdAt",
-});
+  constructor() {
+    super("survey-sync");
+    this.version(1).stores({
+      surveys: "id, status",
+      responses: "id, surveyId, synced",
+      syncQueue: "++id, entityType, entityId",
+    });
+  }
+}
 
-export { db };
+export const db = new SurveySyncDB();

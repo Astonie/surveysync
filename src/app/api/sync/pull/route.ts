@@ -7,8 +7,8 @@ export async function POST(request: NextRequest) {
     const { lastSyncAt, surveyIds } = body;
 
     const where = surveyIds?.length
-      ? { id: { in: surveyIds }, isPublished: true, isActive: true }
-      : { isPublished: true, isActive: true };
+      ? { id: { in: surveyIds }, status: "active" }
+      : { status: "active" };
 
     const surveys = await prisma.survey.findMany({
       where: {

@@ -16,6 +16,7 @@ import {
   Trash2,
   BarChart3,
 } from "lucide-react";
+import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 
 export default function SurveysListPage() {
   const router = useRouter();
@@ -167,9 +168,10 @@ export default function SurveysListPage() {
                   <span>{survey._count?.responses || 0} responses</span>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  <Badge variant={survey.isPublished ? "success" : "secondary"}>
-                    {survey.isPublished ? "Published" : "Draft"}
-                  </Badge>
+                  {(() => {
+                    const sc = SURVEY_STATUS_CONFIG[survey.status as SurveyStatus] || SURVEY_STATUS_CONFIG.draft;
+                    return <Badge variant={sc.badge}>{sc.label}</Badge>;
+                  })()}
                   <span className="text-xs text-muted-foreground">
                     {new Date(survey.createdAt).toLocaleDateString()}
                   </span>
