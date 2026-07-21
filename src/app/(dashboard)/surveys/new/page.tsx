@@ -202,24 +202,26 @@ export default function NewSurveyPage() {
       required: true,
       options: type === "RATING_SCALE" ? [] : ["", ""],
     };
-    setQuestions([...questions, newQ]);
+    setQuestions((prev) => [...prev, newQ]);
   }
 
   function updateQuestion(updated: QuestionData) {
-    setQuestions(questions.map((q) => (q.tempId === updated.tempId ? updated : q)));
+    setQuestions((prev) => prev.map((q) => (q.tempId === updated.tempId ? updated : q)));
   }
 
   function removeQuestion(tempId: string) {
-    setQuestions(questions.filter((q) => q.tempId !== tempId));
+    setQuestions((prev) => prev.filter((q) => q.tempId !== tempId));
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = questions.findIndex((q) => q.tempId === active.id);
-    const newIndex = questions.findIndex((q) => q.tempId === over.id);
-    setQuestions(arrayMove(questions, oldIndex, newIndex));
+    setQuestions((prev) => {
+      const oldIndex = prev.findIndex((q) => q.tempId === active.id);
+      const newIndex = prev.findIndex((q) => q.tempId === over.id);
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   }
 
   async function saveSurvey(publish: boolean) {
