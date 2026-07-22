@@ -45,6 +45,7 @@ export default function CollectPage() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const responseCountRef = useRef(0);
   const [sessionResponses, setSessionResponses] = useState(0);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkAuth() {
@@ -97,8 +98,13 @@ export default function CollectPage() {
           setSession(data);
           setSessionResponses(data.responsesCount || 0);
           responseCountRef.current = data.responsesCount || 0;
+          setSessionError(null);
+        } else {
+          setSessionError("You don't have collector access for this survey. Responses can still be submitted.");
         }
-      } catch {}
+      } catch {
+        setSessionError("Could not create collection session. Responses can still be submitted.");
+      }
     }
     ensureSession();
   }, [surveyId, authChecked, user, survey]);
@@ -183,12 +189,16 @@ export default function CollectPage() {
     const answerData = Object.entries(answers).map(([questionId, value]) => ({ questionId, value }));
     const responseData = { id: responseId, surveyId: survey.id, answers: answerData, createdAt: new Date().toISOString(), synced: false };
 
+    async function addToSyncQueue() {
+      await db.syncQueue.add({ entityType: "response", entityId: responseId, action: "create",
+        payload: JSON.stringify(responseData), createdAt: new Date().toISOString(), attempts: 0 });
+    }
+
     try {
       await db.responses.put({ ...responseData, answers: JSON.stringify(answerData) } as any);
 
       if (!navigator.onLine) {
-        await db.syncQueue.add({ entityType: "response", entityId: responseId, action: "create",
-          payload: JSON.stringify(responseData), createdAt: new Date().toISOString(), attempts: 0 });
+        await addToSyncQueue();
         responseCountRef.current++;
         setSessionResponses(responseCountRef.current);
         const key = `autosave_${surveyId}_${user.id}`;
@@ -212,13 +222,19 @@ export default function CollectPage() {
             body: JSON.stringify({ action: "count", responsesCount: responseCountRef.current }),
           }).catch(() => {});
         }
+        const key = `autosave_${surveyId}_${user.id}`;
+        localStorage.removeItem(key);
+        setSubmitted(true);
+      } else {
+        await addToSyncQueue();
+        responseCountRef.current++;
+        setSessionResponses(responseCountRef.current);
+        const key = `autosave_${surveyId}_${user.id}`;
+        localStorage.removeItem(key);
+        setError("Server rejected the response. It has been saved offline and will sync later.");
       }
-      const key = `autosave_${surveyId}_${user.id}`;
-      localStorage.removeItem(key);
-      setSubmitted(true);
     } catch {
-      await db.syncQueue.add({ entityType: "response", entityId: responseId, action: "create",
-        payload: JSON.stringify(responseData), createdAt: new Date().toISOString(), attempts: 0 });
+      await addToSyncQueue();
       responseCountRef.current++;
       setSessionResponses(responseCountRef.current);
       const key = `autosave_${surveyId}_${user.id}`;
@@ -254,6 +270,23 @@ export default function CollectPage() {
             <WifiOff className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h2 className="text-xl font-semibold mb-2">Survey Not Found</h2>
             <p className="text-muted-foreground">{!navigator.onLine ? "You're offline and this survey hasn't been cached yet." : "This survey doesn't exist or isn't accepting responses."}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (survey.status === "draft") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-secondary/30">
+        <Card className="max-w-md w-full mx-4">
+          <CardContent className="py-12 text-center">
+            <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center">
+              <Clock className="h-8 w-8 text-blue-600" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Survey Not Ready</h2>
+            <p className="text-muted-foreground mb-4">This survey is still in draft mode and not accepting responses yet.</p>
+            <Button variant="outline" onClick={() => router.push("/")}>Back to Dashboard</Button>
           </CardContent>
         </Card>
       </div>
@@ -439,6 +472,11 @@ export default function CollectPage() {
 
       {!isPaused && (
         <div className="max-w-2xl mx-auto px-4 py-8">
+          {sessionError && !session && (
+            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-700 dark:text-yellow-300">
+              {sessionError}
+            </div>
+          )}
           {currentIndex === 0 && survey.description && (
             <p className="text-muted-foreground mb-6 text-center">{survey.description}</p>
           )}
