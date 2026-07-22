@@ -63,13 +63,6 @@ export default function CollectPage() {
     if (!authChecked || !user) return;
     async function loadSurvey() {
       try {
-        const localSurvey = await db.surveys.get(surveyId);
-        if (localSurvey) {
-          setSurvey({ id: localSurvey.id, title: localSurvey.title, description: localSurvey.description,
-            questions: JSON.parse(localSurvey.questions), status: localSurvey.status });
-          setLoading(false);
-          return;
-        }
         if (navigator.onLine) {
           const res = await fetch(`/api/surveys/${surveyId}`);
           if (res.ok) {
@@ -77,7 +70,14 @@ export default function CollectPage() {
             setSurvey(data);
             await db.surveys.put({ id: data.id, title: data.title, description: data.description,
               questions: JSON.stringify(data.questions), status: data.status, syncedAt: new Date().toISOString() });
+            setLoading(false);
+            return;
           }
+        }
+        const localSurvey = await db.surveys.get(surveyId);
+        if (localSurvey) {
+          setSurvey({ id: localSurvey.id, title: localSurvey.title, description: localSurvey.description,
+            questions: JSON.parse(localSurvey.questions), status: localSurvey.status });
         }
       } catch {}
       finally { setLoading(false); }
