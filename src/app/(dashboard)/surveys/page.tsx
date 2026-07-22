@@ -163,7 +163,7 @@ export default function SurveysListPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{survey._count?.questions || 0} questions</span>
+                  <span>{survey.questions?.length || 0} questions</span>
                   <span>&middot;</span>
                   <span>{survey._count?.responses || 0} responses</span>
                 </div>
