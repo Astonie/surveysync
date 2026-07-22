@@ -77,7 +77,7 @@ export default function InviteAcceptPage() {
             <XCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
             <h2 className="text-xl font-semibold mb-2">Invalid Invitation</h2>
             <p className="text-muted-foreground mb-4">{error}</p>
-            <Button variant="outline" onClick={() => router.push("/")}>Go Home</Button>
+            <Button variant="outline" onClick={() => router.push("/dashboard")}>Go Home</Button>
           </CardContent>
         </Card>
       </div>
@@ -99,7 +99,7 @@ export default function InviteAcceptPage() {
                 : "You already have access to this survey."}
             </p>
             <div className="flex flex-col gap-3">
-              <Button onClick={() => router.push("/")} className="gap-2">
+              <Button onClick={() => router.push("/dashboard")} className="gap-2">
                 Go to Dashboard
               </Button>
               {surveyInfo?.surveyId && (

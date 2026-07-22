@@ -43,7 +43,7 @@ function LoginForm() {
         return;
       }
 
-      router.push(inviteToken ? `/invite/${inviteToken}` : "/");
+      router.push(inviteToken ? `/invite/${inviteToken}` : "/dashboard");
       router.refresh();
     } catch {
       setError("Network error");

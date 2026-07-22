@@ -8,7 +8,7 @@ import { LayoutDashboard, FilePlus, List, Settings, HelpCircle, User } from "luc
 const navItems = [
   {
     label: "Dashboard",
-    href: "/",
+    href: "/dashboard",
     icon: LayoutDashboard,
     exact: true,
   },

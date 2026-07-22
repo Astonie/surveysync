@@ -286,7 +286,7 @@ export default function CollectPage() {
             </div>
             <h2 className="text-2xl font-bold mb-2">Survey Not Ready</h2>
             <p className="text-muted-foreground mb-4">This survey is still in draft mode and not accepting responses yet.</p>
-            <Button variant="outline" onClick={() => router.push("/")}>Back to Dashboard</Button>
+            <Button variant="outline" onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
           </CardContent>
         </Card>
       </div>
@@ -303,7 +303,7 @@ export default function CollectPage() {
             </div>
             <h2 className="text-2xl font-bold mb-2">Survey Paused</h2>
             <p className="text-muted-foreground mb-4">This survey is temporarily paused by the owner.</p>
-            <Button variant="outline" onClick={() => router.push("/")}>Back to Dashboard</Button>
+            <Button variant="outline" onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
           </CardContent>
         </Card>
       </div>
@@ -320,7 +320,7 @@ export default function CollectPage() {
             </div>
             <h2 className="text-2xl font-bold mb-2">Survey Closed</h2>
             <p className="text-muted-foreground mb-4">This survey is no longer accepting responses.</p>
-            <Button variant="outline" onClick={() => router.push("/")}>Back to Dashboard</Button>
+            <Button variant="outline" onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
           </CardContent>
         </Card>
       </div>
