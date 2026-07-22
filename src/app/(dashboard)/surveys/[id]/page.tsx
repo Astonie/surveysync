@@ -21,6 +21,8 @@ import {
   UserPlus,
   Trash2,
   Users,
+  Clock,
+  User,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
@@ -34,6 +36,7 @@ export default function SurveyDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [collectors, setCollectors] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
   const [collectorEmail, setCollectorEmail] = useState("");
   const [addingCollector, setAddingCollector] = useState(false);
   const [collectorError, setCollectorError] = useState("");
@@ -43,10 +46,11 @@ export default function SurveyDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [surveyRes, accessRes, inviteRes] = await Promise.all([
+        const [surveyRes, accessRes, inviteRes, sessionsRes] = await Promise.all([
           fetch(`/api/surveys/${params.id}`),
           fetch(`/api/surveys/${params.id}/access`),
           fetch(`/api/surveys/${params.id}/invite`),
+          fetch(`/api/surveys/${params.id}/sessions`),
         ]);
         if (surveyRes.ok) {
           setSurvey(await surveyRes.json());
@@ -61,6 +65,10 @@ export default function SurveyDetailPage() {
         if (inviteRes.ok) {
           const data = await inviteRes.json();
           setInvitations(data.invitations || []);
+        }
+        if (sessionsRes.ok) {
+          const data = await sessionsRes.json();
+          setSessions(data.sessions || []);
         }
       } finally {
         setLoading(false);
@@ -331,6 +339,49 @@ export default function SurveyDetailPage() {
                   <p className="text-xs text-yellow-600">Survey is paused — respondents will see a "paused" message.</p>
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {sessions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="h-5 w-5" /> Collector Sessions ({sessions.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {sessions.map((s: any) => {
+                const statusColors: Record<string, string> = {
+                  active: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+                  paused: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
+                  closed: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                  submitted: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                };
+                return (
+                  <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{s.user.name || s.user.email}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Started {new Date(s.startedAt).toLocaleDateString()} &middot; {s.responsesCount} responses
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={`text-xs ${statusColors[s.status] || ""}`}>{s.status}</Badge>
+                      {s.submittedAt && (
+                        <span className="text-xs text-muted-foreground">Submitted {new Date(s.submittedAt).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

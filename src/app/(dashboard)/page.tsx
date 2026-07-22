@@ -5,13 +5,14 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FilePlus, List, Users, WifiOff, ClipboardList } from "lucide-react";
+import { FilePlus, List, Users, WifiOff, ClipboardList, Clock, Pause, Play, CheckCircle } from "lucide-react";
 import { useOffline } from "@/providers/OfflineProvider";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 
 export default function DashboardPage() {
   const [ownedSurveys, setOwnedSurveys] = useState<any[]>([]);
   const [assignedSurveys, setAssignedSurveys] = useState<any[]>([]);
+  const [collectorSessions, setCollectorSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { pendingCount } = useOffline();
 
@@ -22,9 +23,10 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [ownedRes, assignedRes] = await Promise.all([
+        const [ownedRes, assignedRes, sessionsRes] = await Promise.all([
           fetch("/api/surveys"),
           fetch("/api/collector/surveys"),
+          fetch("/api/collector/sessions"),
         ]);
         if (ownedRes.ok) {
           const data = await ownedRes.json();
@@ -33,6 +35,10 @@ export default function DashboardPage() {
         if (assignedRes.ok) {
           const data = await assignedRes.json();
           setAssignedSurveys(data.surveys || []);
+        }
+        if (sessionsRes.ok) {
+          const data = await sessionsRes.json();
+          setCollectorSessions(data.sessions || []);
         }
       } catch {
       } finally {
@@ -116,17 +122,27 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {assignedSurveys.map((survey: any) => {
                 const sc = getStatusConfig(survey.status);
+                const session = collectorSessions.find((s: any) => s.surveyId === survey.id && (s.status === "active" || s.status === "paused"));
                 return (
-                  <Link key={survey.id} href={`/collect/${survey.id}`} target="_blank"
-                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 transition-colors">
-                    <div>
-                      <p className="font-medium">{survey.title}</p>
+                  <div key={survey.id} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div className="flex-1">
+                      <Link href={`/collect/${survey.id}`} target="_blank" className="font-medium hover:underline">
+                        {survey.title}
+                      </Link>
                       <p className="text-sm text-muted-foreground">
                         {survey.questions?.length ?? survey._count?.questions ?? 0} questions &middot; {survey.myResponses || 0} collected
                       </p>
                     </div>
-                    <Badge variant={sc.badge}>{sc.label}</Badge>
-                  </Link>
+                    <div className="flex items-center gap-2">
+                      {session && (
+                        <Badge variant={session.status === "active" ? "success" : "warning"} className="text-xs gap-1">
+                          {session.status === "active" ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                          {session.responsesCount} collected
+                        </Badge>
+                      )}
+                      <Badge variant={sc.badge}>{sc.label}</Badge>
+                    </div>
+                  </div>
                 );
               })}
             </div>
