@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, FilePlus, List, Settings, HelpCircle } from "lucide-react";
+import { LayoutDashboard, FilePlus, List, Settings, HelpCircle, User } from "lucide-react";
 
 const navItems = [
   {
@@ -22,6 +22,12 @@ const navItems = [
     label: "My Surveys",
     href: "/surveys",
     icon: List,
+  },
+  {
+    label: "Profile",
+    href: "/profile",
+    icon: User,
+    exact: true,
   },
   {
     label: "Settings",

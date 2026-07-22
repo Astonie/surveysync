@@ -2,13 +2,25 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useOffline } from "@/providers/OfflineProvider";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff, BarChart3, LogOut } from "lucide-react";
+import { Wifi, WifiOff, BarChart3, LogOut, User } from "lucide-react";
 
 export function Navbar() {
   const { isOnline, pendingCount, isSyncing } = useOffline();
   const router = useRouter();
+  const [userName, setUserName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user?.name) setUserName(data.user.name);
+        else if (data.user?.email) setUserName(data.user.email);
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -43,6 +55,14 @@ export function Navbar() {
               </Badge>
             )}
           </div>
+          {userName && (
+            <Link href="/profile" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-xs">
+                {userName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+              </div>
+              <span className="hidden sm:inline">{userName}</span>
+            </Link>
+          )}
           <button
             onClick={handleLogout}
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
