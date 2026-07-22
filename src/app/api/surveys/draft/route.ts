@@ -16,11 +16,9 @@ export async function POST(request: NextRequest) {
       questions: questions || [],
     };
 
-    const draftDir = `drafts/${user.id}`;
-
     const existing = draftId
       ? await prisma.syncLog.findFirst({
-          where: { entityType: "survey_draft", entityId: draftId },
+          where: { entityType: "survey_draft", entityId: draftId, userId: user.id },
         })
       : null;
 
@@ -36,6 +34,7 @@ export async function POST(request: NextRequest) {
           entityType: "survey_draft",
           entityId: newId,
           action: "autosave",
+          userId: user.id,
           payload: draftData as any,
         },
       });
@@ -43,8 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ draftId: draftId || existing.entityId });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to save draft" }, { status: 500 });
   }
 }
 
@@ -58,21 +57,21 @@ export async function GET(request: NextRequest) {
 
     if (draftId) {
       const draft = await prisma.syncLog.findFirst({
-        where: { entityType: "survey_draft", entityId: draftId },
+        where: { entityType: "survey_draft", entityId: draftId, userId: user.id },
         orderBy: { createdAt: "desc" },
       });
       return NextResponse.json(draft ? { draft: draft.payload, draftId: draft.entityId } : null);
     }
 
     const drafts = await prisma.syncLog.findMany({
-      where: { entityType: "survey_draft" },
+      where: { entityType: "survey_draft", userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 10,
     });
 
     return NextResponse.json({ drafts: drafts.map((d) => ({ id: d.entityId, data: d.payload, savedAt: d.createdAt })) });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load drafts" }, { status: 500 });
   }
 }
 
@@ -86,11 +85,11 @@ export async function DELETE(request: NextRequest) {
     if (!draftId) return NextResponse.json({ error: "draftId required" }, { status: 400 });
 
     await prisma.syncLog.deleteMany({
-      where: { entityType: "survey_draft", entityId: draftId },
+      where: { entityType: "survey_draft", entityId: draftId, userId: user.id },
     });
 
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete draft" }, { status: 500 });
   }
 }

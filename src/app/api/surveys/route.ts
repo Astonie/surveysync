@@ -19,8 +19,8 @@ export async function GET() {
     });
 
     return NextResponse.json({ surveys });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load surveys" }, { status: 500 });
   }
 }
 
@@ -63,9 +63,9 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(survey, { status: 201 });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error?.message || "Failed to create survey" },
+      { error: "Failed to create survey" },
       { status: 500 }
     );
   }

@@ -57,8 +57,8 @@ export async function PATCH(
 
     const updated = await prisma.collectionSession.update({ where: { id }, data: updateData });
     return NextResponse.json(updated);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
   }
 }
 
@@ -77,7 +77,7 @@ export async function DELETE(
 
     await prisma.collectionSession.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
   }
 }

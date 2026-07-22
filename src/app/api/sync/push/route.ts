@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await getSession();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const syncedIds: number[] = [];
     const failedIds: number[] = [];
 
@@ -33,7 +37,7 @@ export async function POST(request: NextRequest) {
           }
 
           const existingResponse = await prisma.response.findUnique({
-            where: { id: payload.responseId || payload.id },
+            where: { id: payload.id },
           });
 
           if (existingResponse) {
@@ -44,9 +48,8 @@ export async function POST(request: NextRequest) {
           } else {
             await prisma.response.create({
               data: {
-                id: payload.responseId || payload.id,
                 surveyId: payload.surveyId,
-                submittedById: user?.id || null,
+                submittedById: user.id,
                 isOffline: true,
                 syncedAt: new Date(),
                 answers: {

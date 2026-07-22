@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     await createSession({ id: user.id, email: user.email, name: user.name });
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Registration failed" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Registration failed" }, { status: 500 });
   }
 }

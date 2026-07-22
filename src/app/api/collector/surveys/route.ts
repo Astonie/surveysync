@@ -32,7 +32,7 @@ export async function GET() {
     }));
 
     return NextResponse.json({ surveys });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load assigned surveys" }, { status: 500 });
   }
 }

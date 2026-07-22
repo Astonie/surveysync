@@ -25,8 +25,8 @@ export async function GET(
     });
 
     return NextResponse.json({ access });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load access list" }, { status: 500 });
   }
 }
 
@@ -92,8 +92,8 @@ export async function POST(
     });
 
     return NextResponse.json(access, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to add collector" }, { status: 500 });
   }
 }
 
@@ -125,7 +125,7 @@ export async function DELETE(
     });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to remove collector" }, { status: 500 });
   }
 }

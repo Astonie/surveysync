@@ -7,6 +7,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getSession();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
     const survey = await prisma.survey.findUnique({
       where: { id },
@@ -20,9 +25,18 @@ export async function GET(
       return NextResponse.json({ error: "Survey not found" }, { status: 404 });
     }
 
+    if (survey.createdBy !== user.id) {
+      const access = await prisma.surveyAccess.findUnique({
+        where: { userId_surveyId: { userId: user.id, surveyId: id } },
+      });
+      if (!access) {
+        return NextResponse.json({ error: "Survey not found" }, { status: 404 });
+      }
+    }
+
     return NextResponse.json(survey);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load survey" }, { status: 500 });
   }
 }
 
@@ -76,8 +90,8 @@ export async function PUT(
     });
 
     return NextResponse.json(survey);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to update" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to update survey" }, { status: 500 });
   }
 }
 
@@ -104,12 +118,16 @@ export async function PATCH(
 
     const survey = await prisma.survey.update({
       where: { id },
-      data: body,
+      data: {
+        ...(body.title !== undefined && { title: body.title }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.status !== undefined && { status: body.status }),
+      },
     });
 
     return NextResponse.json(survey);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to update survey" }, { status: 500 });
   }
 }
 
@@ -134,7 +152,7 @@ export async function DELETE(
 
     await prisma.survey.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete survey" }, { status: 500 });
   }
 }

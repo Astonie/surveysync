@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(session, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
   }
 }
 
@@ -46,7 +46,7 @@ export async function GET() {
     });
 
     return NextResponse.json({ sessions });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load sessions" }, { status: 500 });
   }
 }

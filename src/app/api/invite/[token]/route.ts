@@ -48,8 +48,8 @@ export async function GET(
       currentUserEmail: user?.email || null,
       alreadyHasAccess: !!alreadyHasAccess,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load invitation" }, { status: 500 });
   }
 }
 
@@ -112,7 +112,7 @@ export async function POST(
       surveyId: invitation.surveyId,
       surveyTitle: invitation.survey.title,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
   }
 }

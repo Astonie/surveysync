@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     await createSession({ id: user.id, email: user.email, name: user.name });
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Login failed" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Login failed" }, { status: 500 });
   }
 }

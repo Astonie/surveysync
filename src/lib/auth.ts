@@ -3,9 +3,13 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 
-const SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "surveysync-default-secret"
-);
+const rawSecret = process.env.NEXTAUTH_SECRET;
+if (!rawSecret || rawSecret === "surveysync-default-secret") {
+  throw new Error(
+    "NEXTAUTH_SECRET must be set to a secure random value. Generate one with: openssl rand -base64 32"
+  );
+}
+const SECRET = new TextEncoder().encode(rawSecret);
 const COOKIE_NAME = "session";
 const EXPIRY = "7d";
 

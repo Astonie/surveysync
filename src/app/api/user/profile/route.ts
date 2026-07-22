@@ -34,8 +34,8 @@ export async function GET() {
     }
 
     return NextResponse.json(user);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to load profile" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to load profile" }, { status: 500 });
   }
 }
 
@@ -78,7 +78,7 @@ export async function PUT(request: NextRequest) {
     await createSession({ id: updated.id, email: updated.email, name: updated.name });
 
     return NextResponse.json(updated);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to update profile" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
   }
 }
