@@ -18,7 +18,9 @@ export function useSyncStatus() {
     refreshPendingCount();
   }, [refreshPendingCount]);
 
-  const syncNow = useCallback(async () => {
+  const MAX_RETRIES = 5;
+
+const syncNow = useCallback(async () => {
     if (isSyncing || pendingCount === 0) return;
 
     setIsSyncing(true);
@@ -46,7 +48,12 @@ export function useSyncStatus() {
 
       const failedIds = result.failedIds || [];
       for (const id of failedIds) {
-        await db.syncQueue.update(id, { attempts: 0 });
+        const item = await db.syncQueue.get(id);
+        if (item && item.attempts >= MAX_RETRIES - 1) {
+          await db.syncQueue.delete(id);
+        } else {
+          await db.syncQueue.update(id, { attempts: (item?.attempts || 0) + 1 });
+        }
       }
 
       setLastSyncTime(new Date().toISOString());

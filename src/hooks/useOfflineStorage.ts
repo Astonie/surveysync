@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { db } from "@/offline/db";
-import type { Question } from "@/types";
+import type { Section } from "@/types";
 
 export function useOfflineStorage() {
   const saveSurveyLocally = useCallback(
@@ -10,14 +10,14 @@ export function useOfflineStorage() {
       id: string;
       title: string;
       description: string | null;
-      questions: Question[];
+      sections: Section[];
       status?: string;
     }) => {
       await db.surveys.put({
         id: survey.id,
         title: survey.title,
         description: survey.description,
-        questions: JSON.stringify(survey.questions),
+        sections: JSON.stringify(survey.sections),
         status: survey.status || "active",
         syncedAt: new Date().toISOString(),
       });
@@ -31,7 +31,7 @@ export function useOfflineStorage() {
 
     return {
       ...survey,
-      questions: JSON.parse(survey.questions) as Question[],
+      sections: JSON.parse(survey.sections) as Section[],
     };
   }, []);
 
@@ -39,7 +39,7 @@ export function useOfflineStorage() {
     const surveys = await db.surveys.toArray();
     return surveys.map((s) => ({
       ...s,
-      questions: JSON.parse(s.questions) as Question[],
+      sections: JSON.parse(s.sections) as Section[],
     }));
   }, []);
 

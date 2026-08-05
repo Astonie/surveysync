@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
+interface QuestionInput {
+  type: string;
+  text: string;
+  required: boolean;
+  options: string[] | null;
+  order: number;
+}
+
+interface SectionInput {
+  title: string;
+  description: string | null;
+  order: number;
+  questions?: QuestionInput[];
+}
+
 export async function GET() {
   try {
     const user = await getSession();
@@ -12,14 +27,15 @@ export async function GET() {
     const surveys = await prisma.survey.findMany({
       where: { createdBy: user.id },
       include: {
-        questions: true,
+        sections: { include: { questions: true }, orderBy: { order: "asc" } },
         _count: { select: { responses: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json({ surveys });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load surveys:", error);
     return NextResponse.json({ error: "Failed to load surveys" }, { status: 500 });
   }
 }
@@ -32,11 +48,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, questions, status } = body;
+    const { title, description, sections, status } = body;
 
-    if (!title || !questions || questions.length === 0) {
+    if (!title) {
       return NextResponse.json(
-        { error: "Title and questions are required" },
+        { error: "Title is required" },
         { status: 400 }
       );
     }
@@ -47,23 +63,33 @@ export async function POST(request: NextRequest) {
         description: description || null,
         status: status || "draft",
         createdBy: user.id,
-        questions: {
-          create: questions.map(
-            (q: { type: string; text: string; required: boolean; options: string[] | null; order: number }) => ({
-              type: q.type,
-              text: q.text,
-              required: q.required,
-              options: q.options || undefined,
-              order: q.order,
+        sections: {
+          create: (sections || []).map(
+            (s: SectionInput, sectionIndex: number) => ({
+              title: s.title,
+              description: s.description || null,
+              order: s.order ?? sectionIndex,
+              questions: {
+                create: (s.questions || []).map(
+                  (q: QuestionInput, questionIndex: number) => ({
+                    type: q.type,
+                    text: q.text,
+                    required: q.required,
+                    options: q.options || undefined,
+                    order: q.order ?? questionIndex,
+                  })
+                ),
+              },
             })
           ),
         },
       },
-      include: { questions: true },
+      include: { sections: { include: { questions: true } } },
     });
 
     return NextResponse.json(survey, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Failed to create survey:", error);
     return NextResponse.json(
       { error: "Failed to create survey" },
       { status: 500 }

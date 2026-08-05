@@ -14,7 +14,7 @@ export async function GET() {
       include: {
         survey: {
           include: {
-            questions: true,
+            sections: { include: { questions: true }, orderBy: { order: "asc" } },
             _count: { select: { responses: true } },
             responses: {
               where: { submittedById: user.id },
@@ -32,7 +32,8 @@ export async function GET() {
     }));
 
     return NextResponse.json({ surveys });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load assigned surveys:", error);
     return NextResponse.json({ error: "Failed to load assigned surveys" }, { status: 500 });
   }
 }

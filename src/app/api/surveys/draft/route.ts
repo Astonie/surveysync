@@ -8,12 +8,12 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
-    const { draftId, title, description, questions } = body;
+    const { draftId, title, description, sections } = body;
 
     const draftData = {
       title: title || "",
       description: description || "",
-      questions: questions || [],
+      sections: sections || [],
     };
 
     const existing = draftId
@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ draftId: draftId || existing.entityId });
-  } catch {
+  } catch (error) {
+    console.error("Failed to save draft:", error);
     return NextResponse.json({ error: "Failed to save draft" }, { status: 500 });
   }
 }
@@ -70,7 +71,8 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({ drafts: drafts.map((d) => ({ id: d.entityId, data: d.payload, savedAt: d.createdAt })) });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load drafts:", error);
     return NextResponse.json({ error: "Failed to load drafts" }, { status: 500 });
   }
 }
@@ -89,7 +91,8 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    console.error("Failed to delete draft:", error);
     return NextResponse.json({ error: "Failed to delete draft" }, { status: 500 });
   }
 }

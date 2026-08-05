@@ -14,11 +14,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const survey = await prisma.survey.findUnique({ where: { id: surveyId } });
+    const survey = await prisma.survey.findUnique({
+      where: { id: surveyId },
+      include: { questions: true },
+    });
     if (!survey || survey.status !== "active") {
       return NextResponse.json(
         { error: "Survey not found or not accepting responses" },
         { status: 404 }
+      );
+    }
+
+    const validQuestionIds = new Set(survey.questions.map((q) => q.id));
+    const invalidAnswers = answers.filter(
+      (a: { questionId: string; value: string | number | string[] }) => !validQuestionIds.has(a.questionId)
+    );
+    if (invalidAnswers.length > 0) {
+      return NextResponse.json(
+        { error: "Some answers reference questions that do not belong to this survey" },
+        { status: 400 }
       );
     }
 
@@ -43,7 +57,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(response, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Failed to submit response:", error);
     return NextResponse.json({ error: "Failed to submit response" }, { status: 500 });
   }
 }

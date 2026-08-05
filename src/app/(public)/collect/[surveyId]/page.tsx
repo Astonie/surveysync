@@ -16,8 +16,15 @@ interface Question {
   id: string; type: string; text: string; required: boolean; options: string[] | null; order: number;
 }
 
+interface Section {
+  id: string; title: string; description: string | null; order: number;
+  questions: Question[];
+}
+
 interface Survey {
-  id: string; title: string; description: string | null; questions: Question[]; status: string;
+  id: string; title: string; description: string | null;
+  sections: Section[];
+  questions?: Question[]; status: string;
 }
 
 interface CollectionSession {
@@ -69,7 +76,7 @@ export default function CollectPage() {
             const data = await res.json();
             setSurvey(data);
             await db.surveys.put({ id: data.id, title: data.title, description: data.description,
-              questions: JSON.stringify(data.questions), status: data.status, syncedAt: new Date().toISOString() });
+              sections: JSON.stringify(data.sections), status: data.status, syncedAt: new Date().toISOString() });
             setLoading(false);
             return;
           }
@@ -77,7 +84,7 @@ export default function CollectPage() {
         const localSurvey = await db.surveys.get(surveyId);
         if (localSurvey) {
           setSurvey({ id: localSurvey.id, title: localSurvey.title, description: localSurvey.description,
-            questions: JSON.parse(localSurvey.questions), status: localSurvey.status });
+            sections: JSON.parse(localSurvey.sections), status: localSurvey.status });
         }
       } catch {}
       finally { setLoading(false); }
@@ -172,7 +179,10 @@ export default function CollectPage() {
 
   async function handleSubmit() {
     if (!survey) return;
-    for (const q of survey.questions) {
+    const allQuestions = survey.sections.length
+      ? survey.sections.flatMap((s) => s.questions)
+      : (survey.questions || []);
+    for (const q of allQuestions) {
       if (q.required) {
         const answer = answers[q.id];
         if (answer === undefined || answer === "" || (Array.isArray(answer) && answer.length === 0)) {
@@ -380,9 +390,33 @@ export default function CollectPage() {
     );
   }
 
-  const sortedQuestions = survey.questions.sort((a, b) => a.order - b.order);
-  const currentQuestion = sortedQuestions[currentIndex];
-  const progress = ((currentIndex + 1) / sortedQuestions.length) * 100;
+  type Step =
+    | { kind: "section"; section: Section }
+    | { kind: "question"; question: Question };
+
+  const steps: Step[] = [];
+  const allQuestions = survey.sections.length
+    ? survey.sections
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .map((s) => ({
+          section: s,
+          questions: s.questions.slice().sort((a, b) => a.order - b.order),
+        }))
+    : [{ section: null, questions: (survey.questions || []).slice().sort((a, b) => a.order - b.order) }];
+
+  for (const group of allQuestions) {
+    if (group.section && (group.section.title || group.section.description)) {
+      steps.push({ kind: "section", section: group.section });
+    }
+    for (const q of group.questions) {
+      steps.push({ kind: "question", question: q });
+    }
+  }
+
+  const currentStep = steps[currentIndex];
+  const currentQuestion = currentStep?.kind === "question" ? currentStep.question : null;
+  const progress = steps.length > 0 ? ((currentIndex + 1) / steps.length) * 100 : 0;
   const sessionStatus = session?.status || "active";
   const isPaused = sessionStatus === "paused";
 
@@ -405,7 +439,7 @@ export default function CollectPage() {
             <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
               <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs text-muted-foreground shrink-0">{currentIndex + 1}/{sortedQuestions.length}</span>
+            <span className="text-xs text-muted-foreground shrink-0">{currentIndex + 1}/{steps.length}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -485,7 +519,25 @@ export default function CollectPage() {
             <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">{error}</div>
           )}
 
-          {currentQuestion && (
+          {currentStep?.kind === "section" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  {currentStep.section.title || "Section"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {currentStep.section.description && (
+                  <p className="text-muted-foreground">{currentStep.section.description}</p>
+                )}
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={() => { setError(null); setCurrentIndex(currentIndex + 1); }}>
+                    {currentIndex === steps.length - 1 ? "Finish" : "Continue"} <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : currentQuestion && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">
@@ -570,7 +622,7 @@ export default function CollectPage() {
               disabled={currentIndex === 0}>
               <ArrowLeft className="h-4 w-4 mr-2" /> Back
             </Button>
-            {currentIndex < sortedQuestions.length - 1 ? (
+            {currentIndex < steps.length - 1 ? (
               <Button onClick={() => { setError(null); setCurrentIndex(currentIndex + 1); }}>
                 Next <ArrowRight className="h-4 w-4 ml-2" />
               </Button>

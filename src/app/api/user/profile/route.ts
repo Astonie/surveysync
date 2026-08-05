@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, createSession } from "@/lib/auth";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function GET() {
   try {
     const sessionUser = await getSession();
@@ -34,7 +36,8 @@ export async function GET() {
     }
 
     return NextResponse.json(user);
-  } catch {
+  } catch (error) {
+    console.error("Failed to load profile:", error);
     return NextResponse.json({ error: "Failed to load profile" }, { status: 500 });
   }
 }
@@ -48,6 +51,22 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { name, email, bio, phone } = body;
+
+    if (email !== undefined && email && !EMAIL_REGEX.test(email)) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+    }
+
+    if (name !== undefined && name && name.length > 100) {
+      return NextResponse.json({ error: "Name must be at most 100 characters" }, { status: 400 });
+    }
+
+    if (bio !== undefined && bio && bio.length > 500) {
+      return NextResponse.json({ error: "Bio must be at most 500 characters" }, { status: 400 });
+    }
+
+    if (phone !== undefined && phone && phone.length > 20) {
+      return NextResponse.json({ error: "Phone must be at most 20 characters" }, { status: 400 });
+    }
 
     if (email && email !== sessionUser.email) {
       const existing = await prisma.user.findUnique({ where: { email } });
@@ -78,7 +97,8 @@ export async function PUT(request: NextRequest) {
     await createSession({ id: updated.id, email: updated.email, name: updated.name });
 
     return NextResponse.json(updated);
-  } catch {
+  } catch (error) {
+    console.error("Failed to update profile:", error);
     return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
   }
 }

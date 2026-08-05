@@ -14,15 +14,7 @@ export const questionSchema = z.object({
   type: questionTypeSchema,
   text: z.string().min(1, "Question text is required"),
   required: z.boolean().default(true),
-  options: z
-    .array(z.string())
-    .optional()
-    .refine(
-      (options) => {
-        return true;
-      },
-      { message: "Options are required for choice-based questions" }
-    ),
+  options: z.array(z.string()).optional(),
   order: z.number().int().min(0),
 });
 

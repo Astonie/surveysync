@@ -16,8 +16,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Current and new password are required" }, { status: 400 });
     }
 
-    if (newPassword.length < 6) {
-      return NextResponse.json({ error: "New password must be at least 6 characters" }, { status: 400 });
+    if (newPassword.length < 8) {
+      return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
+    }
+
+    if (newPassword.length > 128) {
+      return NextResponse.json({ error: "New password must be at most 128 characters" }, { status: 400 });
+    }
+
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return NextResponse.json({ error: "New password must contain uppercase, lowercase, and a number" }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({ where: { id: sessionUser.id } });
@@ -36,7 +44,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.error("Failed to change password:", error);
     return NextResponse.json({ error: "Failed to change password" }, { status: 500 });
   }
 }

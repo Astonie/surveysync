@@ -8,9 +8,20 @@ export type QuestionType =
 
 export type SurveyStatus = "draft" | "active" | "paused" | "closed";
 
+export interface Section {
+  id: string;
+  surveyId: string;
+  title: string;
+  description: string | null;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Question {
   id: string;
   surveyId: string;
+  sectionId: string | null;
   type: QuestionType;
   text: string;
   required: boolean;
@@ -24,6 +35,7 @@ export interface Survey {
   id: string;
   title: string;
   description: string | null;
+  sections: Section[];
   questions: Question[];
   responses: Response[];
   createdBy: string;

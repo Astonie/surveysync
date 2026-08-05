@@ -48,7 +48,8 @@ export async function GET(
       currentUserEmail: user?.email || null,
       alreadyHasAccess: !!alreadyHasAccess,
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load invitation:", error);
     return NextResponse.json({ error: "Failed to load invitation" }, { status: 500 });
   }
 }
@@ -93,26 +94,33 @@ export async function POST(
     });
 
     if (!existingAccess) {
-      await prisma.surveyAccess.create({
-        data: {
-          userId: user.id,
-          surveyId: invitation.surveyId,
-          role: "collector",
-        },
+      await prisma.$transaction([
+        prisma.surveyAccess.create({
+          data: {
+            userId: user.id,
+            surveyId: invitation.surveyId,
+            role: "collector",
+          },
+        }),
+        prisma.invitation.update({
+          where: { id: invitation.id },
+          data: { status: "accepted" },
+        }),
+      ]);
+    } else {
+      await prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: "accepted" },
       });
     }
-
-    await prisma.invitation.update({
-      where: { id: invitation.id },
-      data: { status: "accepted" },
-    });
 
     return NextResponse.json({
       success: true,
       surveyId: invitation.surveyId,
       surveyTitle: invitation.survey.title,
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to accept invitation:", error);
     return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
   }
 }

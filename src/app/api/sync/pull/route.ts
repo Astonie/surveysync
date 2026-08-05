@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
+    console.error("Sync pull failed:", error);
     return NextResponse.json(
       { error: "Pull failed" },
       { status: 500 }

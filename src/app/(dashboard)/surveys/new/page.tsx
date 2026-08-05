@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Plus, Trash2, GripVertical, ArrowLeft, Save, Eye, Cloud, CloudOff,
+  Plus, Trash2, GripVertical, ArrowLeft, Save, Eye, Cloud, CloudOff, FolderPlus,
 } from "lucide-react";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -29,6 +29,28 @@ interface QuestionData {
   text: string;
   required: boolean;
   options: string[];
+}
+
+interface SectionData {
+  tempId: string;
+  title: string;
+  description: string;
+  questions: QuestionData[];
+}
+
+interface RawQuestion {
+  type: QuestionType;
+  text: string;
+  required: boolean;
+  options: string[] | null;
+  order: number;
+}
+
+interface RawSection {
+  title: string | null;
+  description: string | null;
+  order: number;
+  questions?: RawQuestion[];
 }
 
 const questionTypeLabels: Record<QuestionType, string> = {
@@ -96,11 +118,95 @@ function SortableQuestion({ question, index, onUpdate, onRemove }: {
   );
 }
 
+function SectionCard({ section, index, onUpdate, onRemove, onAddQuestion, onMoveQuestion }: {
+  section: SectionData; index: number;
+  onUpdate: (s: SectionData) => void;
+  onRemove: () => void;
+  onAddQuestion: (type: QuestionType) => void;
+  onMoveQuestion: (qTempId: string, sectionTempId: string, direction: -1 | 1) => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const updateQuestion = (q: QuestionData) => {
+    onUpdate({ ...section, questions: section.questions.map((item) => (item.tempId === q.tempId ? q : item)) });
+  };
+  const removeQuestion = (qTempId: string) => {
+    onUpdate({ ...section, questions: section.questions.filter((item) => item.tempId !== qTempId) });
+  };
+  const handleQuestionDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = section.questions.findIndex((q) => q.tempId === active.id);
+    const newIndex = section.questions.findIndex((q) => q.tempId === over.id);
+    onUpdate({ ...section, questions: arrayMove(section.questions, oldIndex, newIndex) });
+  };
+
+  return (
+    <div className="border-2 border-dashed rounded-2xl p-4 space-y-3 bg-background">
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary">Section {index + 1}</Badge>
+        <Input
+          placeholder="Section title (e.g., Personal Information)"
+          value={section.title}
+          onChange={(e) => onUpdate({ ...section, title: e.target.value })}
+          className="flex-1"
+        />
+        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={onRemove}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+      <Textarea
+        placeholder="Section description (optional)"
+        value={section.description}
+        onChange={(e) => onUpdate({ ...section, description: e.target.value })}
+        rows={2}
+      />
+
+      {section.questions.length > 0 ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleQuestionDragEnd}>
+          <SortableContext items={section.questions.map((q) => q.tempId)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-3">
+              {section.questions.map((q, i) => (
+                <div key={q.tempId}>
+                  <SortableQuestion question={q} index={i}
+                    onUpdate={updateQuestion} onRemove={() => removeQuestion(q.tempId)} />
+                  <div className="flex justify-end gap-1 pr-1 -mt-2">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, -1)} disabled={i === 0}>
+                      <GripVertical className="h-3 w-3 rotate-180" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, 1)} disabled={i === section.questions.length - 1}>
+                      <GripVertical className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="text-center py-6 border rounded-xl border-dashed">
+          <p className="text-muted-foreground text-sm">No questions in this section yet.</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 pt-2 border-t">
+        {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(([type, label]) => (
+          <Button key={type} variant="outline" size="sm" onClick={() => onAddQuestion(type)} className="gap-1">
+            <Plus className="h-3 w-3" /> {label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function NewSurveyPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [questions, setQuestions] = useState<QuestionData[]>([]);
+  const [sections, setSections] = useState<SectionData[]>([]);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -109,38 +215,42 @@ export default function NewSurveyPage() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoad = useRef(true);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
+  const questionCount = sections.reduce((n, s) => n + s.questions.length, 0);
 
-  function addQuestion(type: QuestionType) {
-    setQuestions((prev) => [...prev, {
-      tempId: crypto.randomUUID(), type, text: "", required: true,
-      options: type === "RATING_SCALE" ? [] : ["", ""],
+  function addSection() {
+    setSections((prev) => [...prev, {
+      tempId: crypto.randomUUID(), title: "", description: "", questions: [],
     }]);
   }
 
-  function updateQuestion(updated: QuestionData) {
-    setQuestions((prev) => prev.map((q) => (q.tempId === updated.tempId ? updated : q)));
+  function updateSection(updated: SectionData) {
+    setSections((prev) => prev.map((s) => (s.tempId === updated.tempId ? updated : s)));
   }
 
-  function removeQuestion(tempId: string) {
-    setQuestions((prev) => prev.filter((q) => q.tempId !== tempId));
+  function removeSection(sectionTempId: string) {
+    setSections((prev) => prev.filter((s) => s.tempId !== sectionTempId));
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setQuestions((prev) => {
-      const oldIndex = prev.findIndex((q) => q.tempId === active.id);
-      const newIndex = prev.findIndex((q) => q.tempId === over.id);
-      return arrayMove(prev, oldIndex, newIndex);
-    });
+  function addQuestionToSection(sectionTempId: string, type: QuestionType) {
+    setSections((prev) => prev.map((s) => s.tempId === sectionTempId
+      ? { ...s, questions: [...s.questions, { tempId: crypto.randomUUID(), type, text: "", required: true, options: type === "RATING_SCALE" ? [] : ["", ""] }] }
+      : s));
   }
 
-  const autoSave = useCallback(async (t: string, d: string, qs: QuestionData[]) => {
-    if (!t.trim() && qs.length === 0) return;
+  function moveQuestion(qTempId: string, sectionTempId: string, direction: -1 | 1) {
+    setSections((prev) => prev.map((s) => {
+      if (s.tempId !== sectionTempId) return s;
+      const qIndex = s.questions.findIndex((q) => q.tempId === qTempId);
+      const newIndex = qIndex + direction;
+      if (qIndex === -1 || newIndex < 0 || newIndex >= s.questions.length) return s;
+      const newQs = [...s.questions];
+      [newQs[qIndex], newQs[newIndex]] = [newQs[newIndex], newQs[qIndex]];
+      return { ...s, questions: newQs };
+    }));
+  }
+
+  const autoSave = useCallback(async (t: string, d: string, secs: SectionData[]) => {
+    if (!t.trim() && secs.every((s) => s.questions.length === 0)) return;
     setAutoSaveStatus("saving");
     try {
       const res = await fetch("/api/surveys/draft", {
@@ -149,10 +259,14 @@ export default function NewSurveyPage() {
         body: JSON.stringify({
           draftId,
           title: t, description: d,
-          questions: qs.map((q, i) => ({
-            type: q.type, text: q.text, required: q.required,
-            options: questionTypeNeedsOptions.includes(q.type) ? q.options.filter((o) => o.trim()) : null,
-            order: i,
+          sections: secs.map((s, si) => ({
+            title: s.title, description: s.description,
+            order: si,
+            questions: s.questions.map((q, qi) => ({
+              type: q.type, text: q.text, required: q.required,
+              options: questionTypeNeedsOptions.includes(q.type) ? q.options.filter((o) => o.trim()) : null,
+              order: qi,
+            })),
           })),
         }),
       });
@@ -172,9 +286,9 @@ export default function NewSurveyPage() {
   useEffect(() => {
     if (isInitialLoad.current) { isInitialLoad.current = false; return; }
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => autoSave(title, description, questions), 3000);
+    autoSaveTimer.current = setTimeout(() => autoSave(title, description, sections), 3000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [title, description, questions, autoSave]);
+  }, [title, description, sections, autoSave]);
 
   useEffect(() => {
     async function loadDraft() {
@@ -187,12 +301,20 @@ export default function NewSurveyPage() {
             const draft = latest.data;
             if (draft.title) setTitle(draft.title);
             if (draft.description) setDescription(draft.description);
-            if (draft.questions && draft.questions.length > 0) {
-              setQuestions(draft.questions.map((q: any) => ({
+
+            const draftSections = draft.sections && draft.sections.length > 0
+              ? (draft.sections as RawSection[])
+              : (draft.questions ? [{ tempId: crypto.randomUUID(), title: "", description: "", questions: draft.questions }] : []);
+
+            setSections((draftSections as RawSection[]).map((s: RawSection) => ({
+              tempId: crypto.randomUUID(),
+              title: s.title || "",
+              description: s.description || "",
+              questions: (s.questions || []).map((q: RawQuestion) => ({
                 tempId: crypto.randomUUID(), type: q.type, text: q.text || "",
                 required: q.required !== false, options: q.options || [],
-              })));
-            }
+              })),
+            })));
             setDraftId(latest.id);
             setLastSaved(new Date(latest.savedAt));
           }
@@ -204,8 +326,9 @@ export default function NewSurveyPage() {
 
   async function saveSurvey(publish: boolean) {
     if (!title.trim()) return alert("Please enter a survey title");
-    if (questions.length === 0) return alert("Add at least one question");
-    for (const q of questions) {
+    const allQuestions = sections.flatMap((s) => s.questions);
+    if (allQuestions.length === 0) return alert("Add at least one question");
+    for (const q of allQuestions) {
       if (!q.text.trim()) return alert("All questions need text");
       if (questionTypeNeedsOptions.includes(q.type)) {
         const validOptions = q.options.filter((o) => o.trim());
@@ -227,11 +350,15 @@ export default function NewSurveyPage() {
         body: JSON.stringify({
           title: title.trim(), description: description.trim() || null,
           status: publish ? "active" : "draft",
-          questions: questions.map((q, i) => ({
-            type: q.type, text: q.text.trim(), required: q.required,
-            options: questionTypeNeedsOptions.includes(q.type)
-              ? q.options.filter((o) => o.trim()) : null,
-            order: i,
+          sections: sections.map((s, si) => ({
+            title: s.title.trim(), description: s.description.trim() || null,
+            order: si,
+            questions: s.questions.map((q, qi) => ({
+              type: q.type, text: q.text.trim(), required: q.required,
+              options: questionTypeNeedsOptions.includes(q.type)
+                ? q.options.filter((o) => o.trim()) : null,
+              order: qi,
+            })),
           })),
         }),
       });
@@ -253,7 +380,7 @@ export default function NewSurveyPage() {
         <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Create New Survey</h1>
-          <p className="text-sm text-muted-foreground">Design your survey with different question types</p>
+          <p className="text-sm text-muted-foreground">Group your questions into sections</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {autoSaveStatus === "saving" && <><CloudOff className="h-3 w-3 animate-pulse" /> Saving...</>}
@@ -279,34 +406,30 @@ export default function NewSurveyPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Questions ({questions.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {questions.length === 0 ? (
-            <div className="text-center py-8 border-2 border-dashed rounded-xl">
-              <p className="text-muted-foreground mb-4">No questions yet. Add your first question below.</p>
-            </div>
-          ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={questions.map((q) => q.tempId)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-3">
-                  {questions.map((q, i) => (
-                    <SortableQuestion key={q.tempId} question={q} index={i}
-                      onUpdate={updateQuestion} onRemove={() => removeQuestion(q.tempId)} />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          )}
-          <div className="flex flex-wrap gap-2 pt-4 border-t">
-            {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(([type, label]) => (
-              <Button key={type} variant="outline" size="sm" onClick={() => addQuestion(type)} className="gap-1">
-                <Plus className="h-3 w-3" /> {label}
-              </Button>
-            ))}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">
+            Sections ({sections.length}) <span className="text-muted-foreground text-sm font-normal">· {questionCount} questions</span>
+          </h2>
+          <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
+            <FolderPlus className="h-4 w-4" /> Add Section
+          </Button>
+        </div>
+
+        {sections.length === 0 ? (
+          <div className="text-center py-12 border-2 border-dashed rounded-xl">
+            <p className="text-muted-foreground mb-4">No sections yet. Add a section to organize your questions.</p>
+            <Button onClick={addSection} className="gap-1"><FolderPlus className="h-4 w-4" /> Add Section</Button>
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          sections.map((section, i) => (
+            <SectionCard key={section.tempId} section={section} index={i}
+              onUpdate={updateSection} onRemove={() => removeSection(section.tempId)}
+              onAddQuestion={(type) => addQuestionToSection(section.tempId, type)}
+              onMoveQuestion={moveQuestion} />
+          ))
+        )}
+      </div>
 
       <div className="flex justify-end gap-3 pb-8">
         <Button variant="outline" onClick={() => saveSurvey(false)} disabled={saving} className="gap-2">

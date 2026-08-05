@@ -28,6 +28,7 @@ model Survey {
   id          String             @id @default(cuid())
   title       String
   description String?
+  sections    Section[]
   questions   Question[]
   responses   Response[]
   createdBy   String
@@ -57,19 +58,36 @@ model SurveyAccess {
   @@index([userId])
 }
 
-model Question {
-  id        String   @id @default(cuid())
+model Section {
+  id        String     @id @default(cuid())
   surveyId  String
-  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  type      String
-  text      String
-  required  Boolean  @default(true)
-  options   Json?
+  survey    Survey     @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  title     String
+  description String?
   order     Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  questions Question[]
 
   @@index([surveyId])
+}
+
+model Question {
+  id        String    @id @default(cuid())
+  surveyId  String
+  survey    Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  sectionId String?
+  section   Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  type      String
+  text      String
+  required  Boolean   @default(true)
+  options   Json?
+  order     Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([surveyId])
+  @@index([sectionId])
 }
 
 model Response {

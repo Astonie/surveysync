@@ -23,7 +23,8 @@ export async function GET(
     });
 
     return NextResponse.json({ invitations });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load invitations:", error);
     return NextResponse.json({ error: "Failed to load invitations" }, { status: 500 });
   }
 }
@@ -95,7 +96,8 @@ export async function POST(
       inviteUrl,
       message: `Invitation link created. Share this link with ${normalizedEmail}.`,
     }, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Failed to create invitation:", error);
     return NextResponse.json({ error: "Failed to create invitation" }, { status: 500 });
   }
 }

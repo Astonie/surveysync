@@ -16,7 +16,7 @@ export async function PATCH(
     if (session.userId !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
-    const { action, responsesCount } = body;
+    const { action } = body;
 
     const now = new Date();
     let updateData: Record<string, any> = { updatedAt: now };
@@ -26,13 +26,11 @@ export async function PATCH(
         if (session.status !== "active") return NextResponse.json({ error: "Can only pause active sessions" }, { status: 400 });
         updateData.status = "paused";
         updateData.pausedAt = now;
-        if (responsesCount !== undefined) updateData.responsesCount = responsesCount;
         break;
       case "resume":
         if (session.status !== "paused") return NextResponse.json({ error: "Can only resume paused sessions" }, { status: 400 });
         updateData.status = "active";
         updateData.resumedAt = now;
-        if (responsesCount !== undefined) updateData.responsesCount = responsesCount;
         break;
       case "close":
         if (session.status !== "active" && session.status !== "paused") {
@@ -40,24 +38,27 @@ export async function PATCH(
         }
         updateData.status = "closed";
         updateData.closedAt = now;
-        if (responsesCount !== undefined) updateData.responsesCount = responsesCount;
         break;
       case "submit":
         updateData.status = "submitted";
         updateData.submittedAt = now;
         updateData.closedAt = now;
-        if (responsesCount !== undefined) updateData.responsesCount = responsesCount;
         break;
       case "count":
-        if (responsesCount !== undefined) updateData.responsesCount = responsesCount;
         break;
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
+    const serverCount = await prisma.response.count({
+      where: { surveyId: session.surveyId, submittedById: session.userId },
+    });
+    updateData.responsesCount = serverCount;
+
     const updated = await prisma.collectionSession.update({ where: { id }, data: updateData });
     return NextResponse.json(updated);
-  } catch {
+  } catch (error) {
+    console.error("Failed to update session:", error);
     return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
   }
 }
@@ -77,7 +78,8 @@ export async function DELETE(
 
     await prisma.collectionSession.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    console.error("Failed to delete session:", error);
     return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
   }
 }

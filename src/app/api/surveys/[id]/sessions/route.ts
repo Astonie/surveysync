@@ -25,7 +25,8 @@ export async function GET(
     });
 
     return NextResponse.json({ sessions });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load sessions:", error);
     return NextResponse.json({ error: "Failed to load sessions" }, { status: 500 });
   }
 }

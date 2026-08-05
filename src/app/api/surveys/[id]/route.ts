@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
+const VALID_STATUSES = ["draft", "active", "paused", "closed"];
+
+interface QuestionInput {
+  type: string;
+  text: string;
+  required: boolean;
+  options: string[] | null;
+  order: number;
+}
+
+interface SectionInput {
+  title: string;
+  description: string | null;
+  order: number;
+  questions?: QuestionInput[];
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,7 +33,7 @@ export async function GET(
     const survey = await prisma.survey.findUnique({
       where: { id },
       include: {
-        questions: true,
+        sections: { include: { questions: true }, orderBy: { order: "asc" } },
         _count: { select: { responses: true } },
       },
     });
@@ -35,7 +52,8 @@ export async function GET(
     }
 
     return NextResponse.json(survey);
-  } catch {
+  } catch (error) {
+    console.error("Failed to load survey:", error);
     return NextResponse.json({ error: "Failed to load survey" }, { status: 500 });
   }
 }
@@ -52,7 +70,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, questions, status } = body;
+    const { title, description, sections, status } = body;
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -62,8 +80,42 @@ export async function PUT(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (questions) {
-      await prisma.question.deleteMany({ where: { surveyId: id } });
+    if (sections !== undefined) {
+      const survey = await prisma.$transaction(async (tx) => {
+        // Delete existing sections and their questions
+        await tx.section.deleteMany({ where: { surveyId: id } });
+        await tx.question.deleteMany({ where: { surveyId: id } });
+        return tx.survey.update({
+          where: { id },
+          data: {
+            title: title ?? existing.title,
+            description: description !== undefined ? description : existing.description,
+            status: status !== undefined ? status : existing.status,
+            sections: {
+              create: sections.map(
+                (s: SectionInput, sectionIndex: number) => ({
+                  title: s.title,
+                  description: s.description || null,
+                  order: s.order ?? sectionIndex,
+                  questions: {
+                    create: (s.questions || []).map(
+                      (q: QuestionInput, questionIndex: number) => ({
+                        type: q.type,
+                        text: q.text,
+                        required: q.required,
+                        options: q.options || undefined,
+                        order: q.order ?? questionIndex,
+                      })
+                    ),
+                  },
+                })
+              ),
+            },
+          },
+          include: { sections: { include: { questions: true } } },
+        });
+      });
+      return NextResponse.json(survey);
     }
 
     const survey = await prisma.survey.update({
@@ -72,25 +124,13 @@ export async function PUT(
         title: title ?? existing.title,
         description: description !== undefined ? description : existing.description,
         status: status !== undefined ? status : existing.status,
-        questions: questions
-          ? {
-              create: questions.map(
-                (q: { type: string; text: string; required: boolean; options: string[] | null; order: number }) => ({
-                  type: q.type,
-                  text: q.text,
-                  required: q.required,
-                  options: q.options || undefined,
-                  order: q.order,
-                })
-              ),
-            }
-          : undefined,
       },
-      include: { questions: true },
+      include: { sections: { include: { questions: true } } },
     });
 
     return NextResponse.json(survey);
-  } catch {
+  } catch (error) {
+    console.error("Failed to update survey:", error);
     return NextResponse.json({ error: "Failed to update survey" }, { status: 500 });
   }
 }
@@ -107,6 +147,10 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json();
+
+    if (body.status !== undefined && !VALID_STATUSES.includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
+    }
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -126,7 +170,8 @@ export async function PATCH(
     });
 
     return NextResponse.json(survey);
-  } catch {
+  } catch (error) {
+    console.error("Failed to update survey:", error);
     return NextResponse.json({ error: "Failed to update survey" }, { status: 500 });
   }
 }
@@ -152,7 +197,8 @@ export async function DELETE(
 
     await prisma.survey.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.error("Failed to delete survey:", error);
     return NextResponse.json({ error: "Failed to delete survey" }, { status: 500 });
   }
 }

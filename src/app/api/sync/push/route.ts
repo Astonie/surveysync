@@ -14,6 +14,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (items.length > 100) {
+      return NextResponse.json({ error: "Too many items in one sync batch" }, { status: 400 });
+    }
+
     const user = await getSession();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,14 +28,34 @@ export async function POST(request: NextRequest) {
 
     for (const item of items) {
       try {
+        if (!item.payload || typeof item.payload !== "string") {
+          failedIds.push(item.id);
+          continue;
+        }
+
         const payload = JSON.parse(item.payload);
 
         if (item.entityType === "response") {
+          if (!payload.surveyId || !payload.id || !Array.isArray(payload.answers)) {
+            failedIds.push(item.id);
+            continue;
+          }
+
           const survey = await prisma.survey.findUnique({
             where: { id: payload.surveyId },
+            include: { questions: true },
           });
 
           if (!survey || survey.status !== "active") {
+            failedIds.push(item.id);
+            continue;
+          }
+
+          const validQuestionIds = new Set(survey.questions.map((q) => q.id));
+          const hasInvalid = payload.answers.some(
+            (a: { questionId: string }) => !validQuestionIds.has(a.questionId)
+          );
+          if (hasInvalid) {
             failedIds.push(item.id);
             continue;
           }
@@ -74,7 +98,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ syncedIds, failedIds });
-  } catch {
+  } catch (error) {
+    console.error("Sync push failed:", error);
     return NextResponse.json(
       { error: "Sync failed" },
       { status: 500 }

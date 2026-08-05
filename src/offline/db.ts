@@ -4,7 +4,7 @@ interface OfflineSurveyRecord {
   id: string;
   title: string;
   description: string | null;
-  questions: string;
+  sections: string;
   status: string;
   syncedAt: string | null;
 }

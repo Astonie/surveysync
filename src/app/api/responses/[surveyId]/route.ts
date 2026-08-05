@@ -32,7 +32,8 @@ export async function GET(
     });
 
     return NextResponse.json({ survey, responses });
-  } catch {
+  } catch (error) {
+    console.error("Failed to load responses:", error);
     return NextResponse.json({ error: "Failed to load responses" }, { status: 500 });
   }
 }
