@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, MoveUp, MoveDown, Save, FolderPlus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, MoveUp, MoveDown, Save, FolderPlus } from "lucide-react";
 
 type QuestionType = "MULTIPLE_CHOICE" | "CHECKBOX" | "TEXT_INPUT" | "RATING_SCALE" | "DROPDOWN" | "DATE_INPUT";
 
@@ -39,6 +39,7 @@ const questionTypeLabels: Record<QuestionType, string> = {
 };
 
 const needsOptions: QuestionType[] = ["MULTIPLE_CHOICE", "CHECKBOX", "DROPDOWN"];
+const QUESTIONS_PER_PAGE = 10;
 
 interface RawQuestion {
   id: string;
@@ -57,14 +58,33 @@ interface RawSection {
   questions: RawQuestion[];
 }
 
+type BuilderPage =
+  | { kind: "details" }
+  | { kind: "section"; sectionIndex: number; pageNumber: number; questionStart: number; questions: QuestionData[] };
+
+function StepPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${active ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-secondary/50"}`}>
+      {label}
+    </button>
+  );
+}
+
 export default function EditSurveyPage() {
   const params = useParams();
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [sections, setSections] = useState<SectionData[]>([]);
+  const [pageIndex, setPageIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const sectionsRef = useRef(sections);
+
+  useEffect(() => {
+    sectionsRef.current = sections;
+  });
 
   useEffect(() => {
     async function load() {
@@ -104,22 +124,63 @@ export default function EditSurveyPage() {
     load();
   }, [params.id]);
 
+  function buildPages(secs: SectionData[]): BuilderPage[] {
+    const result: BuilderPage[] = [{ kind: "details" }];
+    secs.forEach((s, sectionIndex) => {
+      const chunks: QuestionData[][] = s.questions.length === 0
+        ? [[]]
+        : Array.from({ length: Math.ceil(s.questions.length / QUESTIONS_PER_PAGE) }, (_, i) =>
+            s.questions.slice(i * QUESTIONS_PER_PAGE, (i + 1) * QUESTIONS_PER_PAGE));
+      let qn = 1;
+      chunks.forEach((chunk, ci) => {
+        result.push({ kind: "section", sectionIndex, pageNumber: ci + 1, questionStart: qn, questions: chunk });
+        qn += chunk.length;
+      });
+    });
+    return result;
+  }
+
+  const pages = buildPages(sections);
+  const boundedIndex = Math.min(pageIndex, pages.length - 1);
+  const currentPage = pages[boundedIndex];
+  const progress = pages.length > 0 ? ((boundedIndex + 1) / pages.length) * 100 : 0;
+
+  function pageIndexForSection(sectionIndex: number): number {
+    const idx = pages.findIndex((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
+    return idx === -1 ? boundedIndex : idx;
+  }
+
+  function sectionPageCount(sectionIndex: number): number {
+    const len = sections[sectionIndex]?.questions.length ?? 0;
+    return len === 0 ? 1 : Math.ceil(len / QUESTIONS_PER_PAGE);
+  }
+
+  function lastPageIndexForSection(secs: SectionData[], sectionIndex: number): number {
+    const targetPages = buildPages(secs);
+    const matches = targetPages.filter((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
+    return matches.length > 0 ? targetPages.indexOf(matches[matches.length - 1]) : Math.max(0, targetPages.length - 1);
+  }
+
   function addSection() {
-    setSections((prev) => [...prev.map((s) => s), { title: "", description: "", order: prev.length, questions: [] }]);
+    const newSection: SectionData = { title: "", description: "", order: sectionsRef.current.length, questions: [] };
+    const next = [...sectionsRef.current, newSection];
+    setSections(next);
+    setPageIndex(lastPageIndexForSection(next, next.length - 1));
   }
 
   function removeSection(index: number) {
-    setSections((prev) => prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, order: i })));
+    const next = sectionsRef.current.filter((_, i) => i !== index).map((s, i) => ({ ...s, order: i }));
+    setSections(next);
+    setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
   function moveSection(index: number, direction: -1 | 1) {
-    setSections((prev) => {
-      const next = [...prev];
-      const swapIndex = index + direction;
-      if (swapIndex < 0 || swapIndex >= next.length) return prev;
-      [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-      return next.map((s, i) => ({ ...s, order: i }));
-    });
+    const next = [...sectionsRef.current];
+    const swapIndex = index + direction;
+    if (swapIndex < 0 || swapIndex >= next.length) return;
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+    setSections(next.map((s, i) => ({ ...s, order: i })));
+    setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
   function updateSection(index: number, patch: Partial<SectionData>) {
@@ -127,13 +188,15 @@ export default function EditSurveyPage() {
   }
 
   function addQuestion(sectionIndex: number, type: QuestionType) {
-    setSections((prev) =>
-      prev.map((s, i) =>
-        i === sectionIndex
-          ? { ...s, questions: [...s.questions, { type, text: "", required: true, options: type === "RATING_SCALE" ? [] : ["", ""], order: s.questions.length }] }
-          : s
-      )
-    );
+    const q: QuestionData = {
+      type, text: "", required: true,
+      options: type === "RATING_SCALE" ? [] : ["", ""],
+      order: sectionsRef.current[sectionIndex].questions.length,
+    };
+    const next = sectionsRef.current.map((s, i) =>
+      i === sectionIndex ? { ...s, questions: [...s.questions, q] } : s);
+    setSections(next);
+    setPageIndex(lastPageIndexForSection(next, sectionIndex));
   }
 
   function removeQuestion(sectionIndex: number, questionIndex: number) {
@@ -212,20 +275,20 @@ export default function EditSurveyPage() {
 
   function moveQuestionToSection(sourceSection: number, questionIndex: number, targetSection: number) {
     if (sourceSection === targetSection) return;
-    setSections((prev) => {
-      const question = prev[sourceSection].questions[questionIndex];
-      if (!question) return prev;
-      const next = prev.map((s, i) => {
-        if (i === sourceSection) {
-          return { ...s, questions: s.questions.filter((_, j) => j !== questionIndex).map((q, j) => ({ ...q, order: j })) };
-        }
-        if (i === targetSection) {
-          return { ...s, questions: [...s.questions, { ...question, order: s.questions.length }] };
-        }
-        return s;
-      });
-      return next;
+    const current = sectionsRef.current;
+    const question = current[sourceSection]?.questions[questionIndex];
+    if (!question) return;
+    const next = current.map((s, i) => {
+      if (i === sourceSection) {
+        return { ...s, questions: s.questions.filter((_, j) => j !== questionIndex).map((q, j) => ({ ...q, order: j })) };
+      }
+      if (i === targetSection) {
+        return { ...s, questions: [...s.questions, { ...question, order: s.questions.length }] };
+      }
+      return s;
     });
+    setSections(next);
+    setPageIndex(lastPageIndexForSection(next, targetSection));
   }
 
   async function save() {
@@ -291,77 +354,132 @@ export default function EditSurveyPage() {
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold">Edit Survey</h1>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold">Edit Survey</h1>
+          <p className="text-sm text-muted-foreground">Edit your survey page by page</p>
+        </div>
+        <Button size="sm" onClick={save} disabled={saving} className="gap-2">
+          <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Changes"}
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Survey Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Title *</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          </div>
-          <div className="space-y-2">
-            <Label>Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={2000}
-              rows={3}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            Sections ({sections.length}) <span className="text-muted-foreground text-sm font-normal">· {sections.reduce((n, s) => n + s.questions.length, 0)} questions</span>
-          </h2>
-          <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
-            <FolderPlus className="h-4 w-4" /> Add Section
-          </Button>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+          <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
         </div>
+        <span className="text-xs text-muted-foreground shrink-0">Page {boundedIndex + 1} / {pages.length}</span>
+      </div>
 
-        {sections.map((section, si) => (
-          <div key={si} className="border-2 border-dashed rounded-2xl p-4 space-y-3 bg-background">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">Section {si + 1}</Badge>
-              <Input
-                placeholder="Section title"
-                value={section.title}
-                onChange={(e) => updateSection(si, { title: e.target.value })}
-                className="flex-1"
-              />
-              <Button variant="ghost" size="icon" onClick={() => moveSection(si, -1)} disabled={si === 0}>
-                <MoveUp className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => moveSection(si, 1)} disabled={si === sections.length - 1}>
-                <MoveDown className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => removeSection(si)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <Textarea
-              placeholder="Section description (optional)"
-              value={section.description}
-              onChange={(e) => updateSection(si, { description: e.target.value })}
-              rows={2}
-            />
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => setPageIndex(0)} />
+        {sections.map((s, si) => (
+          <StepPill key={s.id ?? si} label={s.title.trim() || `Section ${si + 1}`}
+            active={currentPage.kind === "section" && currentPage.sectionIndex === si}
+            onClick={() => setPageIndex(pageIndexForSection(si))} />
+        ))}
+      </div>
 
-            {section.questions.length === 0 && (
-              <div className="text-center py-4 border border-dashed rounded-xl">
-                <p className="text-muted-foreground text-sm">No questions in this section yet.</p>
+      {currentPage.kind === "details" ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Survey Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Title *</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
               </div>
-            )}
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-            {section.questions.map((q, qi) => (
-              <div key={qi} className="border rounded-xl p-4 space-y-3 bg-card">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Sections ({sections.length}) <span className="text-sm font-normal text-muted-foreground">· {sections.reduce((n, s) => n + s.questions.length, 0)} questions</span></CardTitle>
+                <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
+                  <FolderPlus className="h-4 w-4" /> Add Section
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {sections.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed rounded-xl">
+                  <p className="text-muted-foreground mb-4">No sections yet. Add a section to organize your questions.</p>
+                  <Button onClick={addSection} className="gap-1"><FolderPlus className="h-4 w-4" /> Add Section</Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sections.map((s, si) => (
+                    <button key={s.id ?? si} onClick={() => setPageIndex(pageIndexForSection(si))}
+                      className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 text-left">
+                      <div>
+                        <p className="text-sm font-medium">{s.title.trim() || `Section ${si + 1}`}</p>
+                        <p className="text-xs text-muted-foreground">{s.questions.length} question{s.questions.length !== 1 ? "s" : ""}{sectionPageCount(si) > 1 ? ` · ${sectionPageCount(si)} pages` : ""}</p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      ) : currentPage.kind === "section" && sections[currentPage.sectionIndex] ? (
+        <div className="border-2 border-dashed rounded-2xl p-4 space-y-3 bg-background">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">Section {currentPage.sectionIndex + 1}</Badge>
+            <Input
+              placeholder="Section title"
+              value={sections[currentPage.sectionIndex].title}
+              onChange={(e) => updateSection(currentPage.sectionIndex, { title: e.target.value })}
+              className="flex-1"
+            />
+            <Button variant="ghost" size="icon" onClick={() => moveSection(currentPage.sectionIndex, -1)} disabled={currentPage.sectionIndex === 0}>
+              <MoveUp className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => moveSection(currentPage.sectionIndex, 1)} disabled={currentPage.sectionIndex === sections.length - 1}>
+              <MoveDown className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => removeSection(currentPage.sectionIndex)}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <Textarea
+            placeholder="Section description (optional)"
+            value={sections[currentPage.sectionIndex].description}
+            onChange={(e) => updateSection(currentPage.sectionIndex, { description: e.target.value })}
+            rows={2}
+          />
+
+          {sectionPageCount(currentPage.sectionIndex) > 1 && (
+            <p className="text-xs text-muted-foreground">
+              {sections[currentPage.sectionIndex].title.trim() || `Section ${currentPage.sectionIndex + 1}`} — page {currentPage.pageNumber} of {sectionPageCount(currentPage.sectionIndex)}
+            </p>
+          )}
+
+          {currentPage.questions.length === 0 && (
+            <div className="text-center py-4 border border-dashed rounded-xl">
+              <p className="text-muted-foreground text-sm">No questions on this page yet.</p>
+            </div>
+          )}
+
+          {currentPage.questions.map((q, i) => {
+            const si = currentPage.sectionIndex;
+            const qi = sections[si].questions.indexOf(q);
+            return (
+              <div key={q.id ?? qi} className="border rounded-xl p-4 space-y-3 bg-card">
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary">Q{qi + 1}</Badge>
+                  <Badge variant="secondary">Q{currentPage.questionStart + i}</Badge>
                   <Badge variant="outline">{questionTypeLabels[q.type]}</Badge>
                   <div className="flex-1" />
                   <select
@@ -376,10 +494,10 @@ export default function EditSurveyPage() {
                       </option>
                     ))}
                   </select>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveQuestion(si, qi, -1)} disabled={qi === 0}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveQuestion(si, qi, -1)} disabled={i === 0}>
                     <MoveUp className="h-3 w-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveQuestion(si, qi, 1)} disabled={qi === section.questions.length - 1}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveQuestion(si, qi, 1)} disabled={i === currentPage.questions.length - 1}>
                     <MoveDown className="h-3 w-3" />
                   </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeQuestion(si, qi)}>
@@ -423,27 +541,36 @@ export default function EditSurveyPage() {
                   Required
                 </label>
               </div>
+            );
+          })}
+
+          <div className="flex flex-wrap gap-2 pt-2 border-t">
+            {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(([type, label]) => (
+              <Button key={type} variant="outline" size="sm" onClick={() => addQuestion(currentPage.sectionIndex, type)} className="gap-1">
+                <Plus className="h-3 w-3" /> {label}
+              </Button>
             ))}
-
-            <div className="flex flex-wrap gap-2 pt-2 border-t">
-              {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(([type, label]) => (
-                <Button key={type} variant="outline" size="sm" onClick={() => addQuestion(si, type)} className="gap-1">
-                  <Plus className="h-3 w-3" /> {label}
-                </Button>
-              ))}
-            </div>
           </div>
-        ))}
-      </div>
+        </div>
+      ) : null}
 
-      <div className="flex justify-end gap-3 pb-8">
-        <Button variant="outline" onClick={() => router.back()}>
-          Cancel
+      <div className="flex items-center justify-between pt-2 pb-8">
+        <Button variant="outline" onClick={() => setPageIndex(Math.max(0, boundedIndex - 1))} disabled={boundedIndex === 0}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
-        <Button onClick={save} disabled={saving} className="gap-2">
-          <Save className="h-4 w-4" />
-          {saving ? "Saving..." : "Save Changes"}
-        </Button>
+        <div className="text-xs text-muted-foreground text-center">
+          Page {boundedIndex + 1} of {pages.length}
+          {currentPage.kind === "section" && ` · Section ${currentPage.sectionIndex + 1} of ${sections.length}`}
+        </div>
+        {boundedIndex < pages.length - 1 ? (
+          <Button onClick={() => setPageIndex(Math.min(pages.length - 1, boundedIndex + 1))}>
+            Next <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        ) : (
+          <Button onClick={save} disabled={saving} className="gap-2">
+            <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Changes"}
+          </Button>
+        )}
       </div>
     </div>
   );

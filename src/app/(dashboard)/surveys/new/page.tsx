@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Plus, Trash2, GripVertical, ArrowLeft, Save, Eye, Cloud, CloudOff, FolderPlus,
+  Plus, Trash2, GripVertical, ArrowLeft, ArrowRight, Save, Eye, Cloud, CloudOff, FolderPlus,
 } from "lucide-react";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -53,6 +53,8 @@ interface RawSection {
   questions?: RawQuestion[];
 }
 
+const QUESTIONS_PER_PAGE = 10;
+
 const questionTypeLabels: Record<QuestionType, string> = {
   MULTIPLE_CHOICE: "Multiple Choice",
   CHECKBOX: "Checkbox",
@@ -63,6 +65,19 @@ const questionTypeLabels: Record<QuestionType, string> = {
 };
 
 const questionTypeNeedsOptions: QuestionType[] = ["MULTIPLE_CHOICE", "CHECKBOX", "DROPDOWN"];
+
+type BuilderPage =
+  | { kind: "details" }
+  | { kind: "section"; sectionIndex: number; pageNumber: number; questionStart: number; questions: QuestionData[] };
+
+function StepPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${active ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-secondary/50"}`}>
+      {label}
+    </button>
+  );
+}
 
 function SortableQuestion({ question, index, onUpdate, onRemove }: {
   question: QuestionData; index: number;
@@ -118,11 +133,13 @@ function SortableQuestion({ question, index, onUpdate, onRemove }: {
   );
 }
 
-function SectionCard({ section, index, onUpdate, onRemove, onAddQuestion, onMoveQuestion }: {
+function SectionCard({ section, index, questionStart, questions, onUpdate, onRemove, onAddQuestion, onMoveQuestion }: {
   section: SectionData; index: number;
+  questionStart: number;
+  questions: QuestionData[];
   onUpdate: (s: SectionData) => void;
   onRemove: () => void;
-  onAddQuestion: (type: QuestionType) => void;
+  onAddQuestion: (type: QuestionType) => string;
   onMoveQuestion: (qTempId: string, sectionTempId: string, direction: -1 | 1) => void;
 }) {
   const sensors = useSensors(
@@ -164,19 +181,19 @@ function SectionCard({ section, index, onUpdate, onRemove, onAddQuestion, onMove
         rows={2}
       />
 
-      {section.questions.length > 0 ? (
+      {questions.length > 0 ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleQuestionDragEnd}>
-          <SortableContext items={section.questions.map((q) => q.tempId)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={questions.map((q) => q.tempId)} strategy={verticalListSortingStrategy}>
             <div className="space-y-3">
-              {section.questions.map((q, i) => (
+              {questions.map((q, i) => (
                 <div key={q.tempId}>
-                  <SortableQuestion question={q} index={i}
+                  <SortableQuestion question={q} index={questionStart + i}
                     onUpdate={updateQuestion} onRemove={() => removeQuestion(q.tempId)} />
                   <div className="flex justify-end gap-1 pr-1 -mt-2">
                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, -1)} disabled={i === 0}>
                       <GripVertical className="h-3 w-3 rotate-180" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, 1)} disabled={i === section.questions.length - 1}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, 1)} disabled={i === questions.length - 1}>
                       <GripVertical className="h-3 w-3" />
                     </Button>
                   </div>
@@ -187,7 +204,7 @@ function SectionCard({ section, index, onUpdate, onRemove, onAddQuestion, onMove
         </DndContext>
       ) : (
         <div className="text-center py-6 border rounded-xl border-dashed">
-          <p className="text-muted-foreground text-sm">No questions in this section yet.</p>
+          <p className="text-muted-foreground text-sm">No questions on this page yet.</p>
         </div>
       )}
 
@@ -207,6 +224,7 @@ export default function NewSurveyPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [sections, setSections] = useState<SectionData[]>([]);
+  const [pageIndex, setPageIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -214,13 +232,50 @@ export default function NewSurveyPage() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoad = useRef(true);
+  const sectionsRef = useRef(sections);
+
+  useEffect(() => {
+    sectionsRef.current = sections;
+  });
 
   const questionCount = sections.reduce((n, s) => n + s.questions.length, 0);
 
+  function buildPages(secs: SectionData[]): BuilderPage[] {
+    const result: BuilderPage[] = [{ kind: "details" }];
+    secs.forEach((s, sectionIndex) => {
+      const chunks: QuestionData[][] = s.questions.length === 0
+        ? [[]]
+        : Array.from({ length: Math.ceil(s.questions.length / QUESTIONS_PER_PAGE) }, (_, i) =>
+            s.questions.slice(i * QUESTIONS_PER_PAGE, (i + 1) * QUESTIONS_PER_PAGE));
+      let qn = 1;
+      chunks.forEach((chunk, ci) => {
+        result.push({ kind: "section", sectionIndex, pageNumber: ci + 1, questionStart: qn, questions: chunk });
+        qn += chunk.length;
+      });
+    });
+    return result;
+  }
+
+  const pages = buildPages(sections);
+  const boundedIndex = Math.min(pageIndex, pages.length - 1);
+  const currentPage = pages[boundedIndex];
+  const progress = pages.length > 0 ? ((boundedIndex + 1) / pages.length) * 100 : 0;
+
+  function pageIndexForSection(sectionIndex: number): number {
+    const idx = pages.findIndex((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
+    return idx === -1 ? boundedIndex : idx;
+  }
+
+  function sectionPageCount(sectionIndex: number): number {
+    const len = sections[sectionIndex]?.questions.length ?? 0;
+    return len === 0 ? 1 : Math.ceil(len / QUESTIONS_PER_PAGE);
+  }
+
   function addSection() {
-    setSections((prev) => [...prev, {
-      tempId: crypto.randomUUID(), title: "", description: "", questions: [],
-    }]);
+    const newSection: SectionData = { tempId: crypto.randomUUID(), title: "", description: "", questions: [] };
+    const next = [...sectionsRef.current, newSection];
+    setSections(next);
+    setPageIndex(buildPages(next).length - 1);
   }
 
   function updateSection(updated: SectionData) {
@@ -228,13 +283,21 @@ export default function NewSurveyPage() {
   }
 
   function removeSection(sectionTempId: string) {
-    setSections((prev) => prev.filter((s) => s.tempId !== sectionTempId));
+    const next = sectionsRef.current.filter((s) => s.tempId !== sectionTempId);
+    setSections(next);
+    setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
-  function addQuestionToSection(sectionTempId: string, type: QuestionType) {
-    setSections((prev) => prev.map((s) => s.tempId === sectionTempId
-      ? { ...s, questions: [...s.questions, { tempId: crypto.randomUUID(), type, text: "", required: true, options: type === "RATING_SCALE" ? [] : ["", ""] }] }
-      : s));
+  function addQuestionToSection(sectionTempId: string, type: QuestionType): string {
+    const newQuestion: QuestionData = {
+      tempId: crypto.randomUUID(), type, text: "", required: true,
+      options: type === "RATING_SCALE" ? [] : ["", ""],
+    };
+    const next = sectionsRef.current.map((s) =>
+      s.tempId === sectionTempId ? { ...s, questions: [...s.questions, newQuestion] } : s);
+    setSections(next);
+    setPageIndex(buildPages(next).findIndex((p) => p.kind === "section" && p.questions.some((q) => q.tempId === newQuestion.tempId)));
+    return newQuestion.tempId;
   }
 
   function moveQuestion(qTempId: string, sectionTempId: string, direction: -1 | 1) {
@@ -380,7 +443,7 @@ export default function NewSurveyPage() {
         <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Create New Survey</h1>
-          <p className="text-sm text-muted-foreground">Group your questions into sections</p>
+          <p className="text-sm text-muted-foreground">Build your survey page by page</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {autoSaveStatus === "saving" && <><CloudOff className="h-3 w-3 animate-pulse" /> Saving...</>}
@@ -388,56 +451,114 @@ export default function NewSurveyPage() {
           {autoSaveStatus === "error" && <span className="text-destructive">Save failed</span>}
           {autoSaveStatus === "idle" && <span>Draft auto-saves every 3s</span>}
         </div>
-      </div>
-
-      <Card>
-        <CardHeader><CardTitle>Survey Details</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Title *</Label>
-            <Input id="title" placeholder="e.g., Customer Satisfaction Survey" value={title}
-              onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea id="description" placeholder="Brief description of your survey..." value={description}
-              onChange={(e) => setDescription(e.target.value)} maxLength={2000} rows={3} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            Sections ({sections.length}) <span className="text-muted-foreground text-sm font-normal">· {questionCount} questions</span>
-          </h2>
-          <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
-            <FolderPlus className="h-4 w-4" /> Add Section
-          </Button>
-        </div>
-
-        {sections.length === 0 ? (
-          <div className="text-center py-12 border-2 border-dashed rounded-xl">
-            <p className="text-muted-foreground mb-4">No sections yet. Add a section to organize your questions.</p>
-            <Button onClick={addSection} className="gap-1"><FolderPlus className="h-4 w-4" /> Add Section</Button>
-          </div>
-        ) : (
-          sections.map((section, i) => (
-            <SectionCard key={section.tempId} section={section} index={i}
-              onUpdate={updateSection} onRemove={() => removeSection(section.tempId)}
-              onAddQuestion={(type) => addQuestionToSection(section.tempId, type)}
-              onMoveQuestion={moveQuestion} />
-          ))
-        )}
-      </div>
-
-      <div className="flex justify-end gap-3 pb-8">
-        <Button variant="outline" onClick={() => saveSurvey(false)} disabled={saving} className="gap-2">
+        <Button variant="outline" size="sm" onClick={() => saveSurvey(false)} disabled={saving || publishing} className="gap-2">
           <Save className="h-4 w-4" /> {saving && !publishing ? "Saving..." : "Save as Draft"}
         </Button>
-        <Button onClick={() => saveSurvey(true)} disabled={saving} className="gap-2">
-          <Eye className="h-4 w-4" /> {publishing ? "Publishing..." : "Publish & View"}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+          <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">Page {boundedIndex + 1} / {pages.length}</span>
+      </div>
+
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => setPageIndex(0)} />
+        {sections.map((s, si) => (
+          <StepPill key={s.tempId} label={s.title.trim() || `Section ${si + 1}`}
+            active={currentPage.kind === "section" && currentPage.sectionIndex === si}
+            onClick={() => setPageIndex(pageIndexForSection(si))} />
+        ))}
+      </div>
+
+      {currentPage.kind === "details" ? (
+        <>
+          <Card>
+            <CardHeader><CardTitle>Survey Details</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="title">Title *</Label>
+                <Input id="title" placeholder="e.g., Customer Satisfaction Survey" value={title}
+                  onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea id="description" placeholder="Brief description of your survey..." value={description}
+                  onChange={(e) => setDescription(e.target.value)} maxLength={2000} rows={3} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Sections ({sections.length}) <span className="text-sm font-normal text-muted-foreground">· {questionCount} questions</span></CardTitle>
+                <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
+                  <FolderPlus className="h-4 w-4" /> Add Section
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {sections.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed rounded-xl">
+                  <p className="text-muted-foreground mb-4">No sections yet. Add a section to organize your questions.</p>
+                  <Button onClick={addSection} className="gap-1"><FolderPlus className="h-4 w-4" /> Add Section</Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sections.map((s, si) => (
+                    <button key={s.tempId} onClick={() => setPageIndex(pageIndexForSection(si))}
+                      className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 text-left">
+                      <div>
+                        <p className="text-sm font-medium">{s.title.trim() || `Section ${si + 1}`}</p>
+                        <p className="text-xs text-muted-foreground">{s.questions.length} question{s.questions.length !== 1 ? "s" : ""}{sectionPageCount(si) > 1 ? ` · ${sectionPageCount(si)} pages` : ""}</p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      ) : currentPage.kind === "section" && sections[currentPage.sectionIndex] ? (
+        <>
+          {sectionPageCount(currentPage.sectionIndex) > 1 && (
+            <p className="text-xs text-muted-foreground">
+              {sections[currentPage.sectionIndex].title.trim() || `Section ${currentPage.sectionIndex + 1}`} — page {currentPage.pageNumber} of {sectionPageCount(currentPage.sectionIndex)}
+            </p>
+          )}
+          <SectionCard
+            section={sections[currentPage.sectionIndex]}
+            index={currentPage.sectionIndex}
+            questionStart={currentPage.questionStart}
+            questions={currentPage.questions}
+            onUpdate={updateSection}
+            onRemove={() => removeSection(sections[currentPage.sectionIndex].tempId)}
+            onAddQuestion={(type) => addQuestionToSection(sections[currentPage.sectionIndex].tempId, type)}
+            onMoveQuestion={moveQuestion}
+          />
+        </>
+      ) : null}
+
+      <div className="flex items-center justify-between pt-2 pb-8">
+        <Button variant="outline" onClick={() => setPageIndex(Math.max(0, boundedIndex - 1))} disabled={boundedIndex === 0}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
+        <div className="text-xs text-muted-foreground text-center">
+          Page {boundedIndex + 1} of {pages.length}
+          {currentPage.kind === "section" && ` · Section ${currentPage.sectionIndex + 1} of ${sections.length}`}
+        </div>
+        {boundedIndex < pages.length - 1 ? (
+          <Button onClick={() => setPageIndex(Math.min(pages.length - 1, boundedIndex + 1))}>
+            Next <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        ) : (
+          <Button onClick={() => saveSurvey(true)} disabled={saving || publishing} className="gap-2">
+            <Eye className="h-4 w-4" /> {publishing ? "Publishing..." : "Publish & View"}
+          </Button>
+        )}
       </div>
     </div>
   );
