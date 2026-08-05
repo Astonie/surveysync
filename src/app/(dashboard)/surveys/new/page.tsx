@@ -20,6 +20,7 @@ import {
   useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { toast } from "sonner";
 
 type QuestionType = "MULTIPLE_CHOICE" | "CHECKBOX" | "TEXT_INPUT" | "RATING_SCALE" | "DROPDOWN" | "DATE_INPUT";
 
@@ -458,14 +459,14 @@ export default function NewSurveyPage() {
   }, []);
 
   async function saveSurvey(publish: boolean) {
-    if (!title.trim()) return alert("Please enter a survey title");
+    if (!title.trim()) return toast.error("Please enter a survey title");
     const allQuestions = sections.flatMap((s) => s.questions);
-    if (allQuestions.length === 0) return alert("Add at least one question");
+    if (allQuestions.length === 0) return toast.error("Add at least one question");
     for (const q of allQuestions) {
-      if (!q.text.trim()) return alert("All questions need text");
+      if (!q.text.trim()) return toast.error("All questions need text");
       if (questionTypeNeedsOptions.includes(q.type)) {
         const validOptions = q.options.filter((o) => o.trim());
-        if (validOptions.length < 2) return alert(`"${q.text}" needs at least 2 options`);
+        if (validOptions.length < 2) return toast.error(`"${q.text}" needs at least 2 options`);
       }
     }
 
@@ -498,9 +499,10 @@ export default function NewSurveyPage() {
 
       if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Failed to save"); }
       const data = await res.json();
+      toast.success(publish ? "Survey published!" : "Survey saved as draft");
       router.push(`/surveys/${data.id}`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save");
+      toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
       setPublishing(false);

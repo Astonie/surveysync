@@ -373,7 +373,25 @@ export default function AnalyticsPage() {
   }, [survey, filteredResponses, questions]);
 
   if (loading) {
-    return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
+    return (
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-muted animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-7 w-1/3 bg-muted animate-pulse rounded" />
+            <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
+          </div>
+          <div className="h-9 w-32 bg-muted animate-pulse rounded-lg" />
+        </div>
+        <div className="h-20 bg-muted animate-pulse rounded-xl" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />
+          ))}
+        </div>
+        <div className="h-72 bg-muted animate-pulse rounded-xl" />
+      </div>
+    );
   }
 
   if (!survey) return null;
@@ -431,12 +449,26 @@ export default function AnalyticsPage() {
 
       {responseCount === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">{responses.length === 0 ? "No responses collected yet." : "No responses match the current filters."}</p>
-            {responses.length === 0 && (
+          <CardContent className="py-14 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <BarChart3 className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h2 className="text-lg font-semibold mb-1">
+              {responses.length === 0 ? "No responses yet" : "No matching responses"}
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              {responses.length === 0
+                ? "Share your survey link to start collecting data. Analytics appear here as responses come in."
+                : "Try adjusting or clearing the filters above."}
+            </p>
+            {responses.length === 0 ? (
               <Link href={`/collect/${survey.id}`} target="_blank">
                 <Button><ExternalLink className="h-4 w-4 mr-2" /> Open Survey Form</Button>
               </Link>
+            ) : (
+              <Button variant="outline" onClick={() => { setDateFrom(""); setDateTo(""); setCollectorFilter(""); setTextSearch(""); }}>
+                <Filter className="h-4 w-4 mr-2" /> Clear Filters
+              </Button>
             )}
           </CardContent>
         </Card>

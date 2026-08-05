@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,19 +14,30 @@ import {
   Edit,
   Trash2,
   BarChart3,
+  ClipboardList,
 } from "lucide-react";
+import { toast } from "sonner";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface SurveySummary {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  createdAt: string;
+  questions?: unknown[];
+  _count?: { responses: number };
+}
 
 export default function SurveysListPage() {
-  const router = useRouter();
-  const [surveys, setSurveys] = useState<any[]>([]);
+  const [surveys, setSurveys] = useState<SurveySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadSurveys();
-  }, []);
+  const [deleteTarget, setDeleteTarget] = useState<SurveySummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function loadSurveys() {
     try {
@@ -41,13 +51,27 @@ export default function SurveysListPage() {
     }
   }
 
-  async function deleteSurvey(id: string) {
-    if (!confirm("Are you sure you want to delete this survey?")) return;
+  useEffect(() => {
+    loadSurveys();
+  }, []);
+
+  async function deleteSurvey() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await fetch(`/api/surveys/${id}`, { method: "DELETE" });
-      setSurveys(surveys.filter((s) => s.id !== id));
-    } catch {}
-    setMenuOpen(null);
+      const res = await fetch(`/api/surveys/${deleteTarget.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setSurveys((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+        toast.success("Survey deleted");
+      } else {
+        toast.error("Failed to delete survey");
+      }
+    } catch {
+      toast.error("Failed to delete survey");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   }
 
   const filtered = surveys.filter((s) =>
@@ -80,14 +104,37 @@ export default function SurveysListPage() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="relative">
+              <CardHeader className="pb-3">
+                <Skeleton className="h-6 w-2/3" />
+                <Skeleton className="h-4 w-full" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-5 w-24" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">
-              {search ? "No surveys match your search." : "No surveys yet."}
+          <CardContent className="py-14 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              {search ? (
+                <Search className="h-6 w-6 text-muted-foreground" />
+              ) : (
+                <ClipboardList className="h-6 w-6 text-muted-foreground" />
+              )}
+            </div>
+            <h2 className="text-lg font-semibold mb-1">
+              {search ? "No matching surveys" : "No surveys yet"}
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              {search
+                ? "Try a different search term."
+                : "Create your first survey to start collecting responses."}
             </p>
             {!search && (
               <Link href="/surveys/new">
@@ -145,7 +192,10 @@ export default function SurveysListPage() {
                             <BarChart3 className="h-3 w-3" /> Responses
                           </Link>
                           <button
-                            onClick={() => deleteSurvey(survey.id)}
+                            onClick={() => {
+                              setDeleteTarget(survey);
+                              setMenuOpen(null);
+                            }}
                             className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary text-destructive w-full text-left"
                           >
                             <Trash2 className="h-3 w-3" /> Delete
@@ -181,6 +231,20 @@ export default function SurveysListPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}
+        title="Delete survey?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.title}" and all of its responses will be permanently deleted. This action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={deleteSurvey}
+      />
     </div>
   );
 }

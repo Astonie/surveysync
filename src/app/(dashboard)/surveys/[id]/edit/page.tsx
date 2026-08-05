@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight, Plus, Trash2, MoveUp, MoveDown, Save, FolderPlus } from "lucide-react";
+import { toast } from "sonner";
 
 type QuestionType = "MULTIPLE_CHOICE" | "CHECKBOX" | "TEXT_INPUT" | "RATING_SCALE" | "DROPDOWN" | "DATE_INPUT";
 
@@ -359,15 +360,15 @@ export default function EditSurveyPage() {
   }
 
   async function save() {
-    if (!title.trim()) return alert("Enter a title");
+    if (!title.trim()) return toast.error("Enter a title");
     const allQuestions = sections.flatMap((s) => s.questions);
-    if (allQuestions.length === 0) return alert("Add at least one question");
+    if (allQuestions.length === 0) return toast.error("Add at least one question");
 
     for (const q of allQuestions) {
-      if (!q.text.trim()) return alert("All questions need text");
+      if (!q.text.trim()) return toast.error("All questions need text");
       if (needsOptions.includes(q.type)) {
         const valid = q.options.filter((o) => o.trim());
-        if (valid.length < 2) return alert(`"${q.text}" needs at least 2 options`);
+        if (valid.length < 2) return toast.error(`"${q.text}" needs at least 2 options`);
       }
     }
 
@@ -399,9 +400,10 @@ export default function EditSurveyPage() {
       });
 
       if (!res.ok) throw new Error("Failed to save");
+      toast.success("Survey updated");
       router.push(`/surveys/${params.id}`);
     } catch {
-      alert("Failed to save survey");
+      toast.error("Failed to save survey");
     } finally {
       setSaving(false);
     }
@@ -409,8 +411,18 @@ export default function EditSurveyPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-muted animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-7 w-1/3 bg-muted animate-pulse rounded" />
+            <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
+          </div>
+          <div className="h-9 w-32 bg-muted animate-pulse rounded-lg" />
+        </div>
+        <div className="h-2 bg-secondary rounded-full" />
+        <div className="h-32 bg-muted animate-pulse rounded-xl" />
+        <div className="h-64 bg-muted animate-pulse rounded-xl" />
       </div>
     );
   }

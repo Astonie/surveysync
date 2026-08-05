@@ -5,14 +5,31 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FilePlus, List, Users, WifiOff, ClipboardList, Clock, Pause, Play, CheckCircle } from "lucide-react";
+import { FilePlus, List, Users, WifiOff, ClipboardList, Pause, Play } from "lucide-react";
 import { useOffline } from "@/providers/OfflineProvider";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface SurveySummary {
+  id: string;
+  title: string;
+  status: string;
+  myResponses?: number;
+  questions?: unknown[];
+  _count?: { responses: number; questions?: number };
+}
+
+interface CollectorSession {
+  id: string;
+  surveyId: string;
+  status: string;
+  responsesCount: number;
+}
 
 export default function DashboardPage() {
-  const [ownedSurveys, setOwnedSurveys] = useState<any[]>([]);
-  const [assignedSurveys, setAssignedSurveys] = useState<any[]>([]);
-  const [collectorSessions, setCollectorSessions] = useState<any[]>([]);
+  const [ownedSurveys, setOwnedSurveys] = useState<SurveySummary[]>([]);
+  const [assignedSurveys, setAssignedSurveys] = useState<SurveySummary[]>([]);
+  const [collectorSessions, setCollectorSessions] = useState<CollectorSession[]>([]);
   const [loading, setLoading] = useState(true);
   const { pendingCount } = useOffline();
 
@@ -120,9 +137,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {assignedSurveys.map((survey: any) => {
+              {assignedSurveys.map((survey) => {
                 const sc = getStatusConfig(survey.status);
-                const session = collectorSessions.find((s: any) => s.surveyId === survey.id && (s.status === "active" || s.status === "paused"));
+                const session = collectorSessions.find((s) => s.surveyId === survey.id && (s.status === "active" || s.status === "paused"));
                 return (
                   <div key={survey.id} className="flex items-center justify-between p-3 rounded-lg border">
                     <div className="flex-1">
@@ -156,11 +173,22 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg border">
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-5 w-1/2" />
+                    <Skeleton className="h-4 w-1/3" />
+                  </div>
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              ))}
             </div>
           ) : ownedSurveys.length === 0 ? (
-            <div className="text-center py-8">
+            <div className="text-center py-10">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <ClipboardList className="h-6 w-6 text-muted-foreground" />
+              </div>
               <p className="text-muted-foreground mb-4">No surveys yet. Create your first one!</p>
               <Link href="/surveys/new">
                 <Button><FilePlus className="h-4 w-4 mr-2" /> Create Survey</Button>
@@ -168,7 +196,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {ownedSurveys.map((survey: any) => {
+              {ownedSurveys.map((survey) => {
                 const sc = getStatusConfig(survey.status);
                 return (
                   <Link key={survey.id} href={`/surveys/${survey.id}`}

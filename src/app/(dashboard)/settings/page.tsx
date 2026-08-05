@@ -7,9 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { useOffline } from "@/providers/OfflineProvider";
 import { db } from "@/offline/db";
 import { Wifi, WifiOff, Trash2, RefreshCw, Database } from "lucide-react";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function SettingsPage() {
   const { isOnline, pendingCount, syncNow, isSyncing } = useOffline();
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [storageStats, setStorageStats] = useState({
     surveys: 0,
     responses: 0,
@@ -27,11 +31,19 @@ export default function SettingsPage() {
   }, []);
 
   async function clearLocalData() {
-    if (!confirm("This will remove all locally cached data. Continue?")) return;
-    await db.surveys.clear();
-    await db.responses.clear();
-    await db.syncQueue.clear();
-    setStorageStats({ surveys: 0, responses: 0, syncQueue: 0 });
+    setClearing(true);
+    try {
+      await db.surveys.clear();
+      await db.responses.clear();
+      await db.syncQueue.clear();
+      setStorageStats({ surveys: 0, responses: 0, syncQueue: 0 });
+      toast.success("Local data cleared");
+    } catch {
+      toast.error("Failed to clear local data");
+    } finally {
+      setClearing(false);
+      setConfirmClear(false);
+    }
   }
 
   return (
@@ -76,11 +88,12 @@ export default function SettingsPage() {
             </Button>
             <Button
               variant="destructive"
-              onClick={clearLocalData}
+              onClick={() => setConfirmClear(true)}
+              disabled={clearing}
               className="gap-2"
             >
               <Trash2 className="h-4 w-4" />
-              Clear Local Data
+              {clearing ? "Clearing..." : "Clear Local Data"}
             </Button>
           </div>
         </CardContent>
@@ -110,6 +123,16 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Clear local data?"
+        description="This will remove all locally cached surveys, responses, and pending sync items from this device. Your data on the server is not affected."
+        confirmLabel="Clear Data"
+        loading={clearing}
+        onConfirm={clearLocalData}
+      />
     </div>
   );
 }

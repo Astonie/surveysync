@@ -25,23 +25,79 @@ import {
   User,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface SurveyQuestion {
+  id: string;
+  text: string;
+  type: string;
+  required: boolean;
+  options: string[] | null;
+  order: number;
+}
+
+interface SurveyData {
+  id: string;
+  title: string;
+  description: string | null;
+  status: SurveyStatus;
+  _count?: { responses: number };
+  questions: SurveyQuestion[];
+}
+
+interface Collector {
+  userId: string;
+  user: { name: string | null; email: string };
+}
+
+interface Invitation {
+  id: string;
+  email: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+interface SessionRecord {
+  id: string;
+  status: string;
+  responsesCount: number;
+  startedAt: string;
+  submittedAt: string | null;
+  user: { name: string | null; email: string };
+}
+
+interface InviteResult {
+  inviteUrl?: string;
+  status?: string;
+  invitation?: { email: string };
+}
+
+interface ConfirmAction {
+  title: string;
+  description: string;
+  action: () => void;
+}
 
 export default function SurveyDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const [survey, setSurvey] = useState<any>(null);
+  const [survey, setSurvey] = useState<SurveyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [collectors, setCollectors] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [collectors, setCollectors] = useState<Collector[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [collectorEmail, setCollectorEmail] = useState("");
   const [addingCollector, setAddingCollector] = useState(false);
   const [collectorError, setCollectorError] = useState("");
-  const [inviteResult, setInviteResult] = useState<any>(null);
+  const [inviteResult, setInviteResult] = useState<InviteResult | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -78,16 +134,19 @@ export default function SurveyDetailPage() {
   }, [params.id, router]);
 
   function getCollectUrl() {
-    return `${typeof window !== "undefined" ? window.location.origin : ""}/collect/${survey.id}`;
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/collect/${survey?.id ?? ""}`;
   }
 
   function copyLink() {
+    if (!survey) return;
     navigator.clipboard.writeText(getCollectUrl());
     setCopied(true);
+    toast.success("Link copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   }
 
   async function updateStatus(newStatus: SurveyStatus) {
+    if (!survey) return;
     setUpdating(true);
     try {
       const res = await fetch(`/api/surveys/${survey.id}`, {
@@ -95,13 +154,21 @@ export default function SurveyDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) setSurvey({ ...survey, status: newStatus });
+      if (res.ok) {
+        setSurvey({ ...survey, status: newStatus });
+        toast.success(`Survey ${newStatus}`);
+      } else {
+        toast.error("Failed to update survey status");
+      }
+    } catch {
+      toast.error("Failed to update survey status");
     } finally {
       setUpdating(false);
     }
   }
 
   async function inviteCollector() {
+    if (!survey) return;
     if (!collectorEmail.trim()) return;
     setAddingCollector(true);
     setCollectorError("");
@@ -117,6 +184,7 @@ export default function SurveyDetailPage() {
         setInviteResult(data);
         setInvitations([data.invitation, ...invitations]);
         setCollectorEmail("");
+        toast.success("Invitation sent");
       } else {
         if (data.status === "pending" && data.invitationId) {
           setInviteResult(data);
@@ -124,6 +192,8 @@ export default function SurveyDetailPage() {
           setCollectorError(data.error || "Failed to send invitation");
         }
       }
+    } catch {
+      toast.error("Failed to send invitation");
     } finally {
       setAddingCollector(false);
     }
@@ -133,12 +203,13 @@ export default function SurveyDetailPage() {
     if (inviteResult?.inviteUrl) {
       navigator.clipboard.writeText(inviteResult.inviteUrl);
       setCopiedInvite(true);
+      toast.success("Invitation link copied");
       setTimeout(() => setCopiedInvite(false), 2000);
     }
   }
 
   async function removeCollector(userId: string) {
-    if (!confirm("Remove this collector's access?")) return;
+    if (!survey) return;
     try {
       const res = await fetch(`/api/surveys/${survey.id}/access`, {
         method: "DELETE",
@@ -147,14 +218,30 @@ export default function SurveyDetailPage() {
       });
       if (res.ok) {
         setCollectors(collectors.filter((c) => c.userId !== userId));
+        toast.success("Collector removed");
+      } else {
+        toast.error("Failed to remove collector");
       }
-    } catch {}
+    } catch {
+      toast.error("Failed to remove collector");
+    }
   }
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-lg" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-7 w-1/2" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
@@ -215,11 +302,13 @@ export default function SurveyDetailPage() {
             {(isActive || isPaused) && (
               <Button
                 variant="destructive"
-                onClick={() => {
-                  if (confirm("Close this survey? It will stop accepting all new responses.")) {
-                    updateStatus("closed");
-                  }
-                }}
+                onClick={() =>
+                  setConfirm({
+                    title: "Close this survey?",
+                    description: "It will stop accepting all new responses. Responses already collected will be kept.",
+                    action: () => updateStatus("closed"),
+                  })
+                }
                 disabled={updating}
                 className="gap-2"
               >
@@ -304,7 +393,13 @@ export default function SurveyDetailPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => removeCollector(c.userId)}
+                    onClick={() =>
+                      setConfirm({
+                        title: "Remove this collector?",
+                        description: `${c.user.name || c.user.email} will lose access to this survey immediately.`,
+                        action: () => removeCollector(c.userId),
+                      })
+                    }
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -344,7 +439,7 @@ export default function SurveyDetailPage() {
                   </Link>
                 </div>
                 {isPaused && (
-                  <p className="text-xs text-yellow-600">Survey is paused — respondents will see a "paused" message.</p>
+                  <p className="text-xs text-yellow-600">Survey is paused — respondents will see a “paused” message.</p>
                 )}
               </div>
             </div>
@@ -361,7 +456,7 @@ export default function SurveyDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {sessions.map((s: any) => {
+              {sessions.map((s) => {
                 const statusColors: Record<string, string> = {
                   active: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
                   paused: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
@@ -401,8 +496,8 @@ export default function SurveyDetailPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {survey.questions
-            .sort((a: any, b: any) => a.order - b.order)
-            .map((q: any, i: number) => (
+            .sort((a, b) => a.order - b.order)
+            .map((q, i) => (
               <div key={q.id} className="border rounded-lg p-3">
                 <div className="flex items-start gap-2">
                   <span className="text-sm font-medium text-muted-foreground">{i + 1}.</span>
@@ -425,6 +520,19 @@ export default function SurveyDetailPage() {
             ))}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!confirm}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title={confirm?.title || ""}
+        description={confirm?.description}
+        confirmLabel="Confirm"
+        loading={updating}
+        onConfirm={() => {
+          confirm?.action();
+          setConfirm(null);
+        }}
+      />
     </div>
   );
 }

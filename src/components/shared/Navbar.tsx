@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useOffline } from "@/providers/OfflineProvider";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff, BarChart3, LogOut, User } from "lucide-react";
+import { Wifi, WifiOff, BarChart3, LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 
 export function Navbar() {
   const { isOnline, pendingCount, isSyncing } = useOffline();
@@ -63,6 +64,7 @@ export function Navbar() {
               <span className="hidden sm:inline">{userName}</span>
             </Link>
           )}
+          <ThemeToggle />
           <button
             onClick={handleLogout}
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"

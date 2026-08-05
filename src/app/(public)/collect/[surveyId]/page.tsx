@@ -11,6 +11,14 @@ import {
   WifiOff, Wifi, CheckCircle, ArrowLeft, ArrowRight, Send, Loader2, LogIn,
   Pause, Play, StopCircle, Cloud, CloudOff, Clock,
 } from "lucide-react";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+interface ConfirmAction {
+  title: string;
+  description: string;
+  action: () => void;
+}
 
 interface Question {
   id: string; type: string; text: string; required: boolean; options: string[] | null; order: number;
@@ -59,6 +67,7 @@ export default function CollectPage() {
   const responseCountRef = useRef(0);
   const [sessionResponses, setSessionResponses] = useState(0);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   useEffect(() => {
     async function checkAuth() {
@@ -186,8 +195,15 @@ export default function CollectPage() {
       if (res.ok) {
         const data = await res.json();
         setSession(data);
+        if (action === "submit") toast.success("Session submitted to survey owner");
+        else if (action === "pause") toast.success("Collection paused");
+        else if (action === "resume") toast.success("Collection resumed");
+      } else {
+        toast.error("Failed to update collection session");
       }
-    } catch {}
+    } catch {
+      toast.error("Failed to update collection session");
+    }
     finally { setSessionLoading(false); }
   }
 
@@ -388,9 +404,11 @@ export default function CollectPage() {
               )}
               {session && (session.status === "active" || session.status === "paused") && (
                 <Button variant="destructive" onClick={() => {
-                  if (confirm("Close this collection session and submit results to the survey owner?")) {
-                    updateSessionStatus("submit");
-                  }
+                  setConfirmAction({
+                    title: "Close collection session?",
+                    description: "This will submit all collected results to the survey owner and close the session.",
+                    action: () => updateSessionStatus("submit"),
+                  });
                 }} disabled={sessionLoading}>
                   <StopCircle className="h-4 w-4 mr-2" /> Close & Submit to Owner
                 </Button>
@@ -603,9 +621,11 @@ export default function CollectPage() {
               )}
               {session && (sessionStatus === "active" || sessionStatus === "paused") && (
                 <Button variant="ghost" size="sm" onClick={() => {
-                  if (confirm(`Submit ${sessionResponses} collected responses to the survey owner and close this session?`)) {
-                    updateSessionStatus("submit");
-                  }
+                  setConfirmAction({
+                    title: "Submit session?",
+                    description: `Submit ${sessionResponses} collected responses to the survey owner and close this session?`,
+                    action: () => updateSessionStatus("submit"),
+                  });
                 }} disabled={sessionLoading} className="h-7 text-xs gap-1 text-destructive hover:text-destructive">
                   <StopCircle className="h-3 w-3" /> Submit
                 </Button>
@@ -630,9 +650,11 @@ export default function CollectPage() {
                   <Play className="h-4 w-4" /> Resume Collection
                 </Button>
                 <Button variant="destructive" onClick={() => {
-                  if (confirm(`Submit ${sessionResponses} collected responses and close?`)) {
-                    updateSessionStatus("submit");
-                  }
+                  setConfirmAction({
+                    title: "Submit & close session?",
+                    description: `Submit ${sessionResponses} collected responses to the survey owner and close?`,
+                    action: () => updateSessionStatus("submit"),
+                  });
                 }} disabled={sessionLoading} className="gap-2">
                   <StopCircle className="h-4 w-4" /> Submit & Close
                 </Button>
@@ -722,6 +744,19 @@ export default function CollectPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction?.title || ""}
+        description={confirmAction?.description}
+        confirmLabel="Submit & Close"
+        loading={sessionLoading}
+        onConfirm={() => {
+          confirmAction?.action();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }
