@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { sessionCreateSchema, firstZodError } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,9 +9,11 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
-    const { surveyId } = body;
-
-    if (!surveyId) return NextResponse.json({ error: "surveyId required" }, { status: 400 });
+    const parsed = sessionCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { surveyId } = parsed.data;
 
     const access = await prisma.surveyAccess.findUnique({
       where: { userId_surveyId: { userId: user.id, surveyId } },

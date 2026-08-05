@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
+import { sessionActionSchema, firstZodError } from "@/lib/validation";
+import { recordAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: NextRequest,
@@ -16,10 +19,14 @@ export async function PATCH(
     if (session.userId !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
-    const { action } = body;
+    const parsed = sessionActionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { action } = parsed.data;
 
     const now = new Date();
-    let updateData: Record<string, any> = { updatedAt: now };
+    const updateData: Prisma.CollectionSessionUncheckedUpdateInput = { updatedAt: now };
 
     switch (action) {
       case "pause":
@@ -46,8 +53,6 @@ export async function PATCH(
         break;
       case "count":
         break;
-      default:
-        return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
     const serverCount = await prisma.response.count({
@@ -56,6 +61,13 @@ export async function PATCH(
     updateData.responsesCount = serverCount;
 
     const updated = await prisma.collectionSession.update({ where: { id }, data: updateData });
+    await recordAudit({
+      action: `session.${action}`,
+      entityType: "collectionSession",
+      entityId: id,
+      surveyId: session.surveyId,
+      actorId: user.id,
+    });
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Failed to update session:", error);

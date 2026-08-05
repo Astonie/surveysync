@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   ArrowLeft, Download, ExternalLink, Users, TrendingUp, Clock, BarChart3,
-  FileText, Search, Filter, ChevronDown, ChevronUp, Hash, Percent,
-  Star, MessageSquare, Activity, Target, Zap, BookOpen,
+  FileText, Filter, Star, MessageSquare, Activity, Target, Zap, BookOpen,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend, RadarChart, Radar,
+  PieChart, Pie, Cell, Legend, RadarChart, Radar,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis, AreaChart, Area,
 } from "recharts";
 
@@ -98,12 +99,14 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const [survey, setSurvey] = useState<any>(null);
   const [responses, setResponses] = useState<any[]>([]);
+  const [auditTrail, setAuditTrail] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const latestCreatedRef = useRef<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [collectorFilter, setCollectorFilter] = useState("");
   const [textSearch, setTextSearch] = useState("");
-  const [expandedText, setExpandedText] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     async function load() {
@@ -113,6 +116,8 @@ export default function AnalyticsPage() {
           const data = await res.json();
           setSurvey(data.survey);
           setResponses(data.responses || []);
+          setAuditTrail(data.auditTrail || []);
+          setLastUpdated(new Date());
         }
       } finally {
         setLoading(false);
@@ -120,6 +125,55 @@ export default function AnalyticsPage() {
     }
     load();
   }, [params.id]);
+
+  useEffect(() => {
+    if (responses.length === 0) {
+      latestCreatedRef.current = null;
+      return;
+    }
+    const latest = responses.reduce(
+      (max: string, r: any) => (new Date(r.createdAt) > new Date(max) ? r.createdAt : max),
+      responses[0].createdAt
+    );
+    latestCreatedRef.current = latest;
+  }, [responses]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const since = latestCreatedRef.current || "";
+        const res = await fetch(`/api/responses/${params.id}?since=${encodeURIComponent(since)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const fresh = (data.responses || []) as any[];
+          setResponses((prev) => {
+            if (fresh.length === 0) return prev;
+            const existing = new Set(prev.map((r: any) => r.id));
+            const incoming = fresh.filter((r: any) => !existing.has(r.id));
+            return incoming.length === 0 ? prev : [...incoming, ...prev];
+          });
+          setLastUpdated(new Date());
+        }
+      } catch {
+        // keep previous data on transient polling failures
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [params.id]);
+
+  const auditByResponse = useMemo(() => {
+    const map = new Map<string, { sessionId?: string; deviceId?: string; ip?: string }>();
+    auditTrail.forEach((entry: any) => {
+      if (!entry.entityId) return;
+      const meta = (entry.metadata || {}) as any;
+      map.set(entry.entityId, {
+        sessionId: typeof meta.sessionId === "string" ? meta.sessionId : undefined,
+        deviceId: typeof meta.deviceId === "string" ? meta.deviceId : undefined,
+        ip: typeof meta.ip === "string" ? meta.ip : undefined,
+      });
+    });
+    return map;
+  }, [auditTrail]);
 
   const filteredResponses = useMemo(() => {
     return responses.filter((r: any) => {
@@ -353,24 +407,14 @@ export default function AnalyticsPage() {
     };
   }, [questionAnalytics, filteredResponses]);
 
-  const exportCSV = useCallback(() => {
-    if (!survey || filteredResponses.length === 0) return;
-    const headers = ["Response ID", "Date", "Channel", "Collector", ...questions.map((q: any) => q.text)];
-    const rows = filteredResponses.map((r: any) => [
-      r.id, new Date(r.createdAt).toLocaleString(), r.isOffline ? "Offline" : "Online",
-      r.collector?.email || "Self",
-      ...questions.map((q: any) => {
-        const answer = r.answers.find((a: any) => a.questionId === q.id);
-        if (!answer) return "";
-        if (Array.isArray(answer.value)) return answer.value.join(", ");
-        return String(answer.value);
-      }),
-    ]);
-    const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${survey.title.replace(/\s+/g, "_")}_analytics.csv`; a.click(); URL.revokeObjectURL(url);
-  }, [survey, filteredResponses, questions]);
+  const downloadExport = useCallback((format: string) => {
+    if (!survey) return;
+    const query = new URLSearchParams({ format });
+    if (dateFrom) query.set("from", dateFrom);
+    if (dateTo) query.set("to", dateTo);
+    if (collectorFilter) query.set("collectorId", collectorFilter);
+    window.location.href = `/api/surveys/${params.id}/export?${query.toString()}`;
+  }, [survey, params.id, dateFrom, dateTo, collectorFilter]);
 
   if (loading) {
     return (
@@ -407,9 +451,35 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold">Research Analytics</h1>
           <p className="text-sm text-muted-foreground">{survey.title} &middot; {responseCount} of {responses.length} responses{activeFilters > 0 ? ` (${activeFilters} filters active)` : ""}</p>
         </div>
-        <Button variant="outline" onClick={exportCSV} disabled={responseCount === 0} className="gap-2">
-          <Download className="h-4 w-4" /> Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          {lastUpdated && (
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+              </span>
+              Live · {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
+          <select
+            aria-label="Export responses"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                downloadExport(e.target.value);
+                e.target.value = "";
+              }
+            }}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+            disabled={responseCount === 0}
+          >
+            <option value="" disabled>Export…</option>
+            <option value="xlsx">Excel (.xlsx)</option>
+            <option value="json">JSON</option>
+            <option value="pdf">PDF report</option>
+            <option value="csv">CSV</option>
+          </select>
+        </div>
       </div>
 
       <Card>
@@ -984,8 +1054,8 @@ export default function AnalyticsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">All Responses ({filteredResponses.length})</CardTitle>
-                  <Button variant="outline" size="sm" onClick={exportCSV} disabled={filteredResponses.length === 0} className="gap-1">
-                    <Download className="h-3 w-3" /> Export CSV
+                  <Button variant="outline" size="sm" onClick={() => downloadExport("csv")} disabled={filteredResponses.length === 0} className="gap-1">
+                    <Download className="h-3 w-3" /> CSV
                   </Button>
                 </div>
               </CardHeader>
@@ -998,24 +1068,34 @@ export default function AnalyticsPage() {
                         <th className="text-left p-2 font-medium">Date</th>
                         <th className="text-left p-2 font-medium">Channel</th>
                         <th className="text-left p-2 font-medium">Collector</th>
+                        <th className="text-left p-2 font-medium">Session</th>
                         {questions.map((q: any) => (
                           <th key={q.id} className="text-left p-2 font-medium max-w-[200px]">{q.text.length > 30 ? q.text.slice(0, 30) + "..." : q.text}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredResponses.map((r: any, i: number) => (
-                        <tr key={r.id} className="border-b hover:bg-secondary/30">
-                          <td className="p-2">{i + 1}</td>
-                          <td className="p-2 text-muted-foreground whitespace-nowrap">{new Date(r.createdAt).toLocaleDateString()}</td>
-                          <td className="p-2"><Badge variant={r.isOffline ? "warning" : "success"} className="text-xs">{r.isOffline ? "Offline" : "Online"}</Badge></td>
-                          <td className="p-2 text-xs">{r.collector?.name || r.collector?.email || "—"}</td>
-                          {questions.map((q: any) => {
-                            const answer = r.answers.find((a: any) => a.questionId === q.id);
-                            return <td key={q.id} className="p-2 max-w-[200px] truncate">{answer ? Array.isArray(answer.value) ? answer.value.join(", ") : String(answer.value) : "-"}</td>;
-                          })}
-                        </tr>
-                      ))}
+                      {filteredResponses.map((r: any, i: number) => {
+                        const audit = auditByResponse.get(r.id);
+                        const sessionLabel = audit?.sessionId
+                          ? `${audit.sessionId.slice(0, 6)}…${audit.deviceId ? ` · ${audit.deviceId.slice(0, 6)}…` : ""}`
+                          : "—";
+                        return (
+                          <tr key={r.id} className="border-b hover:bg-secondary/30">
+                            <td className="p-2">{i + 1}</td>
+                            <td className="p-2 text-muted-foreground whitespace-nowrap">{new Date(r.createdAt).toLocaleDateString()}</td>
+                            <td className="p-2"><Badge variant={r.isOffline ? "warning" : "success"} className="text-xs">{r.isOffline ? "Offline" : "Online"}</Badge></td>
+                            <td className="p-2 text-xs">{r.collector?.name || r.collector?.email || "—"}</td>
+                            <td className="p-2 text-xs text-muted-foreground" title={audit ? `Session: ${audit.sessionId ?? "—"}\nDevice: ${audit.deviceId ?? "—"}\nIP: ${audit.ip ?? "—"}` : undefined}>
+                              {sessionLabel}
+                            </td>
+                            {questions.map((q: any) => {
+                              const answer = r.answers.find((a: any) => a.questionId === q.id);
+                              return <td key={q.id} className="p-2 max-w-[200px] truncate">{answer ? Array.isArray(answer.value) ? answer.value.join(", ") : String(answer.value) : "-"}</td>;
+                            })}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

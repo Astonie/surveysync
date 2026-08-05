@@ -61,7 +61,7 @@ export function useOfflineStorage() {
   );
 
   const getUnsyncedResponses = useCallback(async () => {
-    const responses = await db.responses.where("synced").equals(false as any).toArray();
+    const responses = await db.responses.filter((r) => r.synced === false).toArray();
     return responses.map((r) => ({
       ...r,
       answers: JSON.parse(r.answers),

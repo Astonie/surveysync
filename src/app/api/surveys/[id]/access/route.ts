@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { inviteSchema, accessRemoveSchema, firstZodError } from "@/lib/validation";
+import { recordAudit } from "@/lib/audit";
 
 export async function GET(
   _request: NextRequest,
@@ -48,11 +50,11 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { email } = body;
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    const parsed = inviteSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
+    const { email } = parsed.data;
 
     const targetUser = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
@@ -92,6 +94,15 @@ export async function POST(
       include: { user: { select: { id: true, email: true, name: true } } },
     });
 
+    await recordAudit({
+      action: "access.granted",
+      entityType: "surveyAccess",
+      entityId: access.id,
+      surveyId: id,
+      actorId: user.id,
+      metadata: { email: targetUser.email },
+    });
+
     return NextResponse.json(access, { status: 201 });
   } catch (error) {
     console.error("Failed to add collector:", error);
@@ -116,14 +127,22 @@ export async function DELETE(
     }
 
     const body = await request.json();
-    const { userId } = body;
-
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    const parsed = accessRemoveSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
+    const { userId } = parsed.data;
 
     await prisma.surveyAccess.deleteMany({
       where: { surveyId: id, userId },
+    });
+
+    await recordAudit({
+      action: "access.revoked",
+      entityType: "surveyAccess",
+      surveyId: id,
+      actorId: user.id,
+      metadata: { userId },
     });
 
     return NextResponse.json({ success: true });

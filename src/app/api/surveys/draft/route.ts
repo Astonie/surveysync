@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { draftPayloadSchema, firstZodError } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,7 +9,11 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
-    const { draftId, title, description, sections } = body;
+    const parsed = draftPayloadSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { draftId, title, description, sections } = parsed.data;
 
     const draftData = {
       title: title || "",
@@ -25,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (existing) {
       await prisma.syncLog.update({
         where: { id: existing.id },
-        data: { payload: draftData as any },
+        data: { payload: draftData },
       });
     } else {
       const newId = draftId || crypto.randomUUID();
@@ -35,7 +40,7 @@ export async function POST(request: NextRequest) {
           entityId: newId,
           action: "autosave",
           userId: user.id,
-          payload: draftData as any,
+          payload: draftData,
         },
       });
       return NextResponse.json({ draftId: newId }, { status: 201 });

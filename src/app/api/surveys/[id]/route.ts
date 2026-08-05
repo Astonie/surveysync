@@ -1,25 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
-const VALID_STATUSES = ["draft", "active", "paused", "closed"];
-
-interface QuestionInput {
-  id?: string;
-  type: string;
-  text: string;
-  required: boolean;
-  options: string[] | null;
-  order: number;
-}
-
-interface SectionInput {
-  id?: string;
-  title: string;
-  description: string | null;
-  order: number;
-  questions?: QuestionInput[];
-}
+import { surveyInputSchema, surveyPatchSchema, firstZodError } from "@/lib/validation";
 
 export async function GET(
   _request: NextRequest,
@@ -73,7 +55,11 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, sections, status } = body;
+    const parsed = surveyInputSchema.partial().safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { title, description, sections, status } = parsed.data;
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -96,27 +82,23 @@ export async function PUT(
             description: description !== undefined ? description : existing.description,
             status: status !== undefined ? status : existing.status,
             sections: {
-              create: sections.map(
-                (s: SectionInput, sectionIndex: number) => ({
+              create: sections.map((s, sectionIndex) => ({
                   ...(s.id ? { id: s.id } : {}),
                   title: s.title,
                   description: s.description || null,
                   order: s.order ?? sectionIndex,
                   questions: {
-                    create: (s.questions || []).map(
-                      (q: QuestionInput, questionIndex: number) => ({
-                        ...(q.id ? { id: q.id } : {}),
-                        surveyId: id,
-                        type: q.type,
-                        text: q.text,
-                        required: q.required,
-                        options: q.options || undefined,
-                        order: q.order ?? questionIndex,
-                      })
-                    ),
+                    create: s.questions.map((q, questionIndex) => ({
+                      ...(q.id ? { id: q.id } : {}),
+                      surveyId: id,
+                      type: q.type,
+                      text: q.text,
+                      required: q.required,
+                      options: q.options || undefined,
+                      order: q.order ?? questionIndex,
+                    })),
                   },
-                })
-              ),
+                })),
             },
           },
           include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
@@ -154,10 +136,11 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json();
-
-    if (body.status !== undefined && !VALID_STATUSES.includes(body.status)) {
-      return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
+    const parsed = surveyPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
+    const patch = parsed.data;
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -170,9 +153,9 @@ export async function PATCH(
     const survey = await prisma.survey.update({
       where: { id },
       data: {
-        ...(body.title !== undefined && { title: body.title }),
-        ...(body.description !== undefined && { description: body.description }),
-        ...(body.status !== undefined && { status: body.status }),
+        ...(patch.title !== undefined && { title: patch.title }),
+        ...(patch.description !== undefined && { description: patch.description }),
+        ...(patch.status !== undefined && { status: patch.status }),
       },
     });
 

@@ -7,6 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle, XCircle, Mail, LogIn, ExternalLink } from "lucide-react";
 
+interface InviteData {
+  invitation: {
+    email: string;
+    survey: { title: string; description: string | null; status: string };
+    inviter: { name: string | null; email: string };
+  };
+  isLoggedIn: boolean;
+  currentUserEmail?: string;
+  alreadyHasAccess?: boolean;
+}
+
+interface SurveyInfo {
+  title?: string;
+  surveyId?: string;
+}
+
 export default function InviteAcceptPage() {
   const params = useParams();
   const router = useRouter();
@@ -15,9 +31,9 @@ export default function InviteAcceptPage() {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<InviteData | null>(null);
   const [accepted, setAccepted] = useState(false);
-  const [surveyInfo, setSurveyInfo] = useState<any>(null);
+  const [surveyInfo, setSurveyInfo] = useState<SurveyInfo | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -91,7 +107,7 @@ export default function InviteAcceptPage() {
           <CardContent className="py-12 text-center">
             <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
             <h2 className="text-2xl font-bold mb-2">
-              {surveyInfo?.title ? `You're in!` : "Welcome!"}
+              {surveyInfo?.title ? "You&rsquo;re in!" : "Welcome!"}
             </h2>
             <p className="text-muted-foreground mb-6">
               {surveyInfo?.title
@@ -126,9 +142,9 @@ export default function InviteAcceptPage() {
             <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
               <Mail className="h-8 w-8 text-primary" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">You're Invited!</h2>
+            <h2 className="text-2xl font-bold mb-2">You&rsquo;re Invited!</h2>
             <p className="text-muted-foreground">
-              You've been invited to collect data for a survey.
+              You&rsquo;ve been invited to collect data for a survey.
             </p>
           </div>
 
@@ -168,7 +184,7 @@ export default function InviteAcceptPage() {
           ) : !emailMatch ? (
             <div className="space-y-3">
               <p className="text-sm text-center text-muted-foreground">
-                This invitation is for <strong>{invitation?.email}</strong> but you're logged in as <strong>{data?.currentUserEmail}</strong>.
+                This invitation is for <strong>{invitation?.email}</strong> but you&rsquo;re logged in as <strong>{data?.currentUserEmail}</strong>.
               </p>
               <Button variant="outline" onClick={() => { document.cookie = "session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; window.location.reload(); }} className="w-full">
                 Log Out & Switch Account

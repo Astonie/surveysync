@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, verifyPassword, hashPassword } from "@/lib/auth";
+import { changePasswordSchema, firstZodError } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,23 +11,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { currentPassword, newPassword } = body;
-
-    if (!currentPassword || !newPassword) {
-      return NextResponse.json({ error: "Current and new password are required" }, { status: 400 });
+    const parsed = changePasswordSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
-
-    if (newPassword.length < 8) {
-      return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
-    }
-
-    if (newPassword.length > 128) {
-      return NextResponse.json({ error: "New password must be at most 128 characters" }, { status: 400 });
-    }
-
-    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      return NextResponse.json({ error: "New password must contain uppercase, lowercase, and a number" }, { status: 400 });
-    }
+    const { currentPassword, newPassword } = parsed.data;
 
     const user = await prisma.user.findUnique({ where: { id: sessionUser.id } });
     if (!user) {

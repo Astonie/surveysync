@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
-interface QuestionInput {
-  type: string;
-  text: string;
-  required: boolean;
-  options: string[] | null;
-  order: number;
-}
+import { surveyInputSchema, firstZodError } from "@/lib/validation";
 
 export async function GET() {
   try {
@@ -42,14 +35,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, sections, status } = body;
-
-    if (!title) {
-      return NextResponse.json(
-        { error: "Title is required" },
-        { status: 400 }
-      );
+    const parsed = surveyInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
+    const { title, description, sections, status } = parsed.data;
 
     const survey = await prisma.$transaction(async (tx) => {
       const created = await tx.survey.create({
@@ -69,8 +59,8 @@ export async function POST(request: NextRequest) {
             description: s.description || null,
             order: s.order ?? sectionIndex,
             questions: {
-              create: (s.questions || []).map(
-                (q: QuestionInput, questionIndex: number) => ({
+              create: s.questions.map(
+                (q, questionIndex) => ({
                   surveyId: created.id,
                   type: q.type,
                   text: q.text,

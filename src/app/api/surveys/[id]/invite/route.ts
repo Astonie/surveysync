@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { inviteSchema, firstZodError } from "@/lib/validation";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { recordAudit, clientIp } from "@/lib/audit";
 import crypto from "crypto";
 
 export async function GET(
@@ -43,12 +46,21 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { email } = body;
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+    const { allowed, retryAfterMs } = checkRateLimit(`invite:${ip}`, 20, 60_000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Too many invites. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } }
+      );
     }
+
+    const body = await request.json();
+    const parsed = inviteSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { email } = parsed.data;
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -90,6 +102,15 @@ export async function POST(
     const protocol = request.headers.get("x-forwarded-proto") || "https";
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${protocol}://${host}` : "http://localhost:3000");
     const inviteUrl = `${appUrl}/invite/${token}`;
+
+    await recordAudit({
+      action: "invitation.created",
+      entityType: "invitation",
+      entityId: invitation.id,
+      surveyId: id,
+      actorId: user.id,
+      metadata: { email: normalizedEmail, ip: clientIp(request) },
+    });
 
     return NextResponse.json({
       invitation,

@@ -1,30 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { syncPushSchema, firstZodError } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { items } = body;
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: "No items to sync" },
-        { status: 400 }
-      );
+    const parsed = syncPushSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
-
-    if (items.length > 100) {
-      return NextResponse.json({ error: "Too many items in one sync batch" }, { status: 400 });
-    }
+    const { items } = parsed.data;
 
     const user = await getSession();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const syncedIds: number[] = [];
-    const failedIds: number[] = [];
+    const syncedIds: string[] = [];
+    const failedIds: string[] = [];
 
     for (const item of items) {
       try {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { liveQuery } from "dexie";
 import { db } from "@/offline/db";
 
 export function useSyncStatus() {
@@ -15,8 +16,12 @@ export function useSyncStatus() {
   }, []);
 
   useEffect(() => {
-    refreshPendingCount();
-  }, [refreshPendingCount]);
+    const subscription = liveQuery(() => db.syncQueue.count()).subscribe({
+      next: (count) => setPendingCount(count),
+      error: () => {},
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const MAX_RETRIES = 5;
 

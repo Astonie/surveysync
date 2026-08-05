@@ -1,7 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { prisma } from "./prisma";
 
 const rawSecret = process.env.NEXTAUTH_SECRET;
 if (!rawSecret || rawSecret === "surveysync-default-secret") {

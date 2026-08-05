@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { syncPullSchema, firstZodError } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +11,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { lastSyncAt, surveyIds } = body;
+    const parsed = syncPullSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
+    }
+    const { lastSyncAt, surveyIds } = parsed.data;
 
     const where = surveyIds?.length
       ? { id: { in: surveyIds }, status: "active" as const }

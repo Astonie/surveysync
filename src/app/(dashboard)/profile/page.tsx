@@ -5,8 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { User, Mail, Phone, FileText, Lock, Save, Loader2, CheckCircle } from "lucide-react";
+import { User, Mail, Phone, Lock, Save, Loader2, CheckCircle } from "lucide-react";
 
 interface UserProfile {
   id: string;
