@@ -2,14 +2,14 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { db } from "@/offline/db";
+import { db, type OfflineResponseRecord } from "@/offline/db";
 import { useOffline } from "@/providers/OfflineProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   WifiOff, Wifi, CheckCircle, ArrowLeft, ArrowRight, Send, Loader2, LogIn,
-  Pause, Play, StopCircle, Cloud, CloudOff, Clock, User,
+  Pause, Play, StopCircle, Cloud, CloudOff, Clock,
 } from "lucide-react";
 
 interface Question {
@@ -27,6 +27,12 @@ interface Survey {
   questions?: Question[]; status: string;
 }
 
+interface SessionUser {
+  id: string;
+  name?: string | null;
+  email?: string;
+}
+
 interface CollectionSession {
   id: string; status: string; responsesCount: number; startedAt: string;
 }
@@ -39,12 +45,12 @@ export default function CollectPage() {
 
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | number | string[]>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [session, setSession] = useState<CollectionSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -140,13 +146,16 @@ export default function CollectPage() {
   useEffect(() => {
     if (!user || !survey) return;
     const key = `autosave_${surveyId}_${user.id}`;
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.answers) setAnswers(data.answers);
-      }
-    } catch {}
+    const timer = setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.answers) setAnswers(data.answers);
+        }
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timer);
   }, [user, survey, surveyId]);
 
   const updateAnswer = useCallback((questionId: string, value: string | number | string[]) => {
@@ -183,7 +192,7 @@ export default function CollectPage() {
   }
 
   async function handleSubmit() {
-    if (!survey) return;
+    if (!survey || !user) return;
     const allQuestions = survey.sections.length
       ? survey.sections.flatMap((s) => s.questions)
       : (survey.questions || []);
@@ -202,15 +211,20 @@ export default function CollectPage() {
 
     const responseId = crypto.randomUUID();
     const answerData = Object.entries(answers).map(([questionId, value]) => ({ questionId, value }));
-    const responseData = { id: responseId, surveyId: survey.id, answers: answerData, createdAt: new Date().toISOString(), synced: false };
+    const responseData = { id: responseId, surveyId: survey.id, createdAt: new Date().toISOString(), synced: false };
 
     async function addToSyncQueue() {
       await db.syncQueue.add({ entityType: "response", entityId: responseId, action: "create",
-        payload: JSON.stringify(responseData), createdAt: new Date().toISOString(), attempts: 0 });
+        payload: JSON.stringify({ ...responseData, answers: answerData }), createdAt: new Date().toISOString(), attempts: 0 });
     }
 
+    const offlineRecord: OfflineResponseRecord = {
+      ...responseData,
+      answers: JSON.stringify(answerData),
+    };
+
     try {
-      await db.responses.put({ ...responseData, answers: JSON.stringify(answerData) } as any);
+      await db.responses.put(offlineRecord);
 
       if (!navigator.onLine) {
         await addToSyncQueue();
@@ -359,7 +373,7 @@ export default function CollectPage() {
               <Badge variant="warning">{pendingCount} response{pendingCount !== 1 ? "s" : ""} waiting to sync</Badge>
             )}
             <div className="flex flex-col gap-2 mt-6">
-              <Button onClick={() => { setSubmitted(false); setAnswers({}); setCurrentIndex(0); }}>
+              <Button onClick={() => { setSubmitted(false); setAnswers({}); setPageIndex(0); }}>
                 Collect Another Response
               </Button>
               {session && session.status === "active" && (
@@ -395,12 +409,17 @@ export default function CollectPage() {
     );
   }
 
-  type Step =
-    | { kind: "section"; section: Section }
-    | { kind: "question"; question: Question };
+  const QUESTIONS_PER_PAGE = 10;
 
-  const steps: Step[] = [];
-  const allQuestions = survey.sections.length
+  interface SurveyPage {
+    section: Section | null;
+    sectionIndex: number;
+    pageNumber: number;
+    questionStart: number;
+    questions: Question[];
+  }
+
+  const grouped = survey.sections.length
     ? survey.sections
         .slice()
         .sort((a, b) => a.order - b.order)
@@ -410,20 +429,132 @@ export default function CollectPage() {
         }))
     : [{ section: null, questions: (survey.questions || []).slice().sort((a, b) => a.order - b.order) }];
 
-  for (const group of allQuestions) {
-    if (group.section && (group.section.title || group.section.description)) {
-      steps.push({ kind: "section", section: group.section });
+  const pages: SurveyPage[] = [];
+  grouped.forEach((group, sectionIndex) => {
+    let questionNumber = 1;
+    for (let i = 0; i < group.questions.length; i += QUESTIONS_PER_PAGE) {
+      const chunk = group.questions.slice(i, i + QUESTIONS_PER_PAGE);
+      pages.push({
+        section: group.section,
+        sectionIndex,
+        pageNumber: Math.floor(i / QUESTIONS_PER_PAGE) + 1,
+        questionStart: questionNumber,
+        questions: chunk,
+      });
+      questionNumber += chunk.length;
     }
-    for (const q of group.questions) {
-      steps.push({ kind: "question", question: q });
-    }
-  }
+  });
 
-  const currentStep = steps[currentIndex];
-  const currentQuestion = currentStep?.kind === "question" ? currentStep.question : null;
-  const progress = steps.length > 0 ? ((currentIndex + 1) / steps.length) * 100 : 0;
+  const totalQuestions = grouped.reduce((n, g) => n + g.questions.length, 0);
+  const boundedPageIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
+  const currentPage = pages[boundedPageIndex] || null;
+  const progress = pages.length > 0 ? ((boundedPageIndex + 1) / pages.length) * 100 : 0;
   const sessionStatus = session?.status || "active";
   const isPaused = sessionStatus === "paused";
+
+  function validateCurrentPage() {
+    if (!currentPage) return true;
+    for (const q of currentPage.questions) {
+      if (q.required) {
+        const answer = answers[q.id];
+        if (answer === undefined || answer === "" || (Array.isArray(answer) && answer.length === 0)) {
+          setError(`Please answer: "${q.text}"`);
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function goNext() {
+    if (!validateCurrentPage()) return;
+    setError(null);
+    setPageIndex((p) => Math.min(pages.length - 1, p + 1));
+  }
+
+  function renderQuestion(q: Question, number: number) {
+    const numberLabel = `${number}.`;
+    return (
+      <Card key={q.id}>
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">
+            <span className="text-muted-foreground mr-2">{numberLabel}</span>
+            {q.text}
+            {q.required && <span className="text-destructive ml-1">*</span>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {q.type === "TEXT_INPUT" && (
+            <textarea
+              className="w-full min-h-[120px] rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="Type your answer here..."
+              value={(answers[q.id] as string) || ""}
+              onChange={(e) => updateAnswer(q.id, e.target.value)}
+            />
+          )}
+
+          {q.type === "MULTIPLE_CHOICE" && q.options && (
+            <div className="space-y-2">
+              {q.options.map((opt) => (
+                <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${answers[q.id] === opt ? "border-primary bg-primary/5" : "hover:bg-secondary/50"}`}>
+                  <input type="radio" name={q.id} value={opt} checked={answers[q.id] === opt}
+                    onChange={() => updateAnswer(q.id, opt)} className="h-4 w-4 text-primary" />
+                  <span>{opt}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {q.type === "CHECKBOX" && q.options && (
+            <div className="space-y-2">
+              {q.options.map((opt) => {
+                const selected = ((answers[q.id] as string[]) || []).includes(opt);
+                return (
+                  <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selected ? "border-primary bg-primary/5" : "hover:bg-secondary/50"}`}>
+                    <input type="checkbox" checked={selected} onChange={() => toggleCheckbox(q.id, opt)}
+                      className="h-4 w-4 rounded text-primary" />
+                    <span>{opt}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {q.type === "DROPDOWN" && q.options && (
+            <select
+              className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={(answers[q.id] as string) || ""}
+              onChange={(e) => updateAnswer(q.id, e.target.value)}
+            >
+              <option value="">Select an option...</option>
+              {q.options.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          )}
+
+          {q.type === "RATING_SCALE" && (
+            <div className="flex justify-center gap-3 py-4">
+              {[1, 2, 3, 4, 5].map((num) => (
+                <button key={num} onClick={() => updateAnswer(q.id, num)}
+                  className={`h-14 w-14 rounded-xl text-lg font-bold transition-all ${answers[q.id] === num ? "bg-primary text-primary-foreground scale-110" : "bg-secondary hover:bg-secondary/80"}`}>
+                  {num}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {q.type === "DATE_INPUT" && (
+            <input type="date"
+              className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={(answers[q.id] as string) || ""}
+              onChange={(e) => updateAnswer(q.id, e.target.value)}
+            />
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-secondary/30">
@@ -444,7 +575,9 @@ export default function CollectPage() {
             <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
               <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs text-muted-foreground shrink-0">{currentIndex + 1}/{steps.length}</span>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {currentPage ? `Page ${boundedPageIndex + 1} of ${pages.length}` : "0 of 0"}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -516,7 +649,7 @@ export default function CollectPage() {
               {sessionError}
             </div>
           )}
-          {currentIndex === 0 && survey.description && (
+          {boundedPageIndex === 0 && survey.description && (
             <p className="text-muted-foreground mb-6 text-center">{survey.description}</p>
           )}
 
@@ -524,111 +657,60 @@ export default function CollectPage() {
             <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">{error}</div>
           )}
 
-          {currentStep?.kind === "section" ? (
+          {!currentPage ? (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">
-                  {currentStep.section.title || "Section"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {currentStep.section.description && (
-                  <p className="text-muted-foreground">{currentStep.section.description}</p>
-                )}
-                <div className="mt-6 flex justify-end">
-                  <Button onClick={() => { setError(null); setCurrentIndex(currentIndex + 1); }}>
-                    {currentIndex === steps.length - 1 ? "Finish" : "Continue"} <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
+              <CardContent className="py-12 text-center">
+                <h2 className="text-lg font-semibold mb-2">No questions yet</h2>
+                <p className="text-muted-foreground">This survey doesn&apos;t have any questions to display.</p>
               </CardContent>
             </Card>
-          ) : currentQuestion && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">
-                  {currentQuestion.text}
-                  {currentQuestion.required && <span className="text-destructive ml-1">*</span>}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {currentQuestion.type === "TEXT_INPUT" && (
-                  <textarea
-                    className="w-full min-h-[120px] rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder="Type your answer here..."
-                    value={(answers[currentQuestion.id] as string) || ""}
-                    onChange={(e) => updateAnswer(currentQuestion.id, e.target.value)}
-                  />
-                )}
-
-                {currentQuestion.type === "MULTIPLE_CHOICE" && currentQuestion.options && (
-                  <div className="space-y-2">
-                    {currentQuestion.options.map((opt) => (
-                      <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${answers[currentQuestion.id] === opt ? "border-primary bg-primary/5" : "hover:bg-secondary/50"}`}>
-                        <input type="radio" name={currentQuestion.id} value={opt} checked={answers[currentQuestion.id] === opt}
-                          onChange={() => updateAnswer(currentQuestion.id, opt)} className="h-4 w-4 text-primary" />
-                        <span>{opt}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {currentQuestion.type === "CHECKBOX" && currentQuestion.options && (
-                  <div className="space-y-2">
-                    {currentQuestion.options.map((opt) => {
-                      const selected = ((answers[currentQuestion.id] as string[]) || []).includes(opt);
-                      return (
-                        <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selected ? "border-primary bg-primary/5" : "hover:bg-secondary/50"}`}>
-                          <input type="checkbox" checked={selected} onChange={() => toggleCheckbox(currentQuestion.id, opt)}
-                            className="h-4 w-4 rounded text-primary" />
-                          <span>{opt}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {currentQuestion.type === "DROPDOWN" && currentQuestion.options && (
-                  <select
-                    className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={(answers[currentQuestion.id] as string) || ""}
-                    onChange={(e) => updateAnswer(currentQuestion.id, e.target.value)}
-                  >
-                    <option value="">Select an option...</option>
-                    {currentQuestion.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                )}
-
-                {currentQuestion.type === "RATING_SCALE" && (
-                  <div className="flex justify-center gap-3 py-4">
-                    {[1, 2, 3, 4, 5].map((num) => (
-                      <button key={num} onClick={() => updateAnswer(currentQuestion.id, num)}
-                        className={`h-14 w-14 rounded-xl text-lg font-bold transition-all ${answers[currentQuestion.id] === num ? "bg-primary text-primary-foreground scale-110" : "bg-secondary hover:bg-secondary/80"}`}>
-                        {num}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {currentQuestion.type === "DATE_INPUT" && (
-                  <input type="date"
-                    className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={(answers[currentQuestion.id] as string) || ""}
-                    onChange={(e) => updateAnswer(currentQuestion.id, e.target.value)}
-                  />
-                )}
-              </CardContent>
-            </Card>
+          ) : (
+            <>
+              {currentPage.section && currentPage.pageNumber === 1 && (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader>
+                    <Badge variant="secondary" className="w-fit">Section {currentPage.sectionIndex + 1}</Badge>
+                    <CardTitle className="text-xl mt-2">{currentPage.section.title || "Section"}</CardTitle>
+                  </CardHeader>
+                  {currentPage.section.description && (
+                    <CardContent className="pt-0">
+                      <p className="text-muted-foreground">{currentPage.section.description}</p>
+                    </CardContent>
+                  )}
+                </Card>
+              )}
+              {currentPage.section && currentPage.pageNumber > 1 && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  {currentPage.section.title || "Section"} — continued
+                </p>
+              )}
+              {!currentPage.section && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Questions {currentPage.questionStart}
+                  {currentPage.questions.length > 1
+                    ? `-${currentPage.questionStart + currentPage.questions.length - 1}`
+                    : ""}{" "}
+                  of {totalQuestions}
+                </p>
+              )}
+              <div className="space-y-6">
+                {currentPage.questions.map((q, i) => renderQuestion(q, currentPage.questionStart + i))}
+              </div>
+            </>
           )}
 
-          <div className="flex justify-between mt-6">
-            <Button variant="outline" onClick={() => { setError(null); setCurrentIndex(Math.max(0, currentIndex - 1)); }}
-              disabled={currentIndex === 0}>
+          <div className="flex items-center justify-between mt-8">
+            <Button variant="outline" onClick={() => { setError(null); setPageIndex(Math.max(0, pageIndex - 1)); }}
+              disabled={pageIndex === 0}>
               <ArrowLeft className="h-4 w-4 mr-2" /> Back
             </Button>
-            {currentIndex < steps.length - 1 ? (
-              <Button onClick={() => { setError(null); setCurrentIndex(currentIndex + 1); }}>
+            <div className="text-xs text-muted-foreground">
+              {currentPage
+                ? `Page ${boundedPageIndex + 1} of ${pages.length} · Question${currentPage.questions.length !== 1 ? "s" : ""} ${currentPage.questionStart}-${currentPage.questionStart + currentPage.questions.length - 1} of ${totalQuestions}`
+                : "0 of 0"}
+            </div>
+            {pageIndex < pages.length - 1 ? (
+              <Button onClick={goNext}>
                 Next <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             ) : (

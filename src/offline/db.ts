@@ -17,6 +17,8 @@ interface OfflineResponseRecord {
   synced: boolean;
 }
 
+export type { OfflineSurveyRecord, OfflineResponseRecord };
+
 interface SyncQueueRecord {
   id?: number;
   entityType: string;
