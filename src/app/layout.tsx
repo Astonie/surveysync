@@ -9,9 +9,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "SurveySync - Offline-First Data Collection",
+  title: "SurveySync - Professional Survey Research & Field Data Collection",
   description:
-    "An open-source, offline-first data collection tool for surveys. Collect data anywhere, sync when online.",
+    "Design studies, collect dependable responses even offline, and turn results into findings. Built for academic and industry research teams.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
