@@ -79,8 +79,9 @@ function StepPill({ label, active, onClick }: { label: string; active: boolean; 
   );
 }
 
-function SortableQuestion({ question, index, onUpdate, onRemove }: {
+function SortableQuestion({ question, index, selected, onToggleSelect, onUpdate, onRemove }: {
   question: QuestionData; index: number;
+  selected: boolean; onToggleSelect: () => void;
   onUpdate: (q: QuestionData) => void; onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -91,6 +92,7 @@ function SortableQuestion({ question, index, onUpdate, onRemove }: {
   return (
     <div ref={setNodeRef} style={style} className="border rounded-xl p-4 bg-card space-y-3">
       <div className="flex items-center gap-2">
+        <input type="checkbox" className="rounded" checked={selected} onChange={onToggleSelect} title="Select question" />
         <button className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground" {...attributes} {...listeners}>
           <GripVertical className="h-5 w-5" />
         </button>
@@ -133,10 +135,12 @@ function SortableQuestion({ question, index, onUpdate, onRemove }: {
   );
 }
 
-function SectionCard({ section, index, questionStart, questions, onUpdate, onRemove, onAddQuestion, onMoveQuestion }: {
+function SectionCard({ section, index, questionStart, questions, selected, onToggleSelect, onUpdate, onRemove, onAddQuestion, onMoveQuestion }: {
   section: SectionData; index: number;
   questionStart: number;
   questions: QuestionData[];
+  selected: Set<string>;
+  onToggleSelect: (tempId: string) => void;
   onUpdate: (s: SectionData) => void;
   onRemove: () => void;
   onAddQuestion: (type: QuestionType) => string;
@@ -188,6 +192,8 @@ function SectionCard({ section, index, questionStart, questions, onUpdate, onRem
               {questions.map((q, i) => (
                 <div key={q.tempId}>
                   <SortableQuestion question={q} index={questionStart + i}
+                    selected={selected.has(q.tempId)}
+                    onToggleSelect={() => onToggleSelect(q.tempId)}
                     onUpdate={updateQuestion} onRemove={() => removeQuestion(q.tempId)} />
                   <div className="flex justify-end gap-1 pr-1 -mt-2">
                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMoveQuestion(q.tempId, section.tempId, -1)} disabled={i === 0}>
@@ -225,6 +231,7 @@ export default function NewSurveyPage() {
   const [description, setDescription] = useState("");
   const [sections, setSections] = useState<SectionData[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -261,6 +268,66 @@ export default function NewSurveyPage() {
   const currentPage = pages[boundedIndex];
   const progress = pages.length > 0 ? ((boundedIndex + 1) / pages.length) * 100 : 0;
 
+  const pageQuestionKeys = currentPage.kind === "section" ? currentPage.questions.map((q) => q.tempId) : [];
+  const allPageSelected = pageQuestionKeys.length > 0 && pageQuestionKeys.every((k) => selected.has(k));
+  const selectedCount = [...selected].filter((k) => sections.some((s) => s.questions.some((q) => q.tempId === k))).length;
+
+  function goToPage(index: number) {
+    setSelected(new Set());
+    setPageIndex(Math.max(0, Math.min(pages.length - 1, index)));
+  }
+
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageQuestionKeys.forEach((k) => next.delete(k));
+      else pageQuestionKeys.forEach((k) => next.add(k));
+      return next;
+    });
+  }
+
+  function lastPageIndexForSection(secs: SectionData[], sectionIndex: number): number {
+    const targetPages = buildPages(secs);
+    const matches = targetPages.filter((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
+    return matches.length > 0 ? targetPages.indexOf(matches[matches.length - 1]) : Math.max(0, targetPages.length - 1);
+  }
+
+  function bulkAction(kind: "delete" | "toggleRequired" | "move", targetSectionTempId?: string) {
+    if (currentPage.kind !== "section") return;
+    const current = sectionsRef.current;
+    const si = currentPage.sectionIndex;
+    const sec = current[si];
+    if (!sec) return;
+    const keys = new Set(pageQuestionKeys.filter((k) => selected.has(k)));
+
+    if (kind === "delete") {
+      setSections(current.map((s, i) => i === si ? { ...s, questions: s.questions.filter((q) => !keys.has(q.tempId)) } : s));
+    } else if (kind === "toggleRequired") {
+      setSections(current.map((s, i) => i === si ? { ...s, questions: s.questions.map((q) => keys.has(q.tempId) ? { ...q, required: !q.required } : q) } : s));
+    } else if (kind === "move" && targetSectionTempId && targetSectionTempId !== sec.tempId) {
+      const moving = sec.questions.filter((q) => keys.has(q.tempId));
+      if (moving.length === 0) return;
+      const next = current.map((s) => {
+        if (s.tempId === sec.tempId) return { ...s, questions: s.questions.filter((q) => !keys.has(q.tempId)) };
+        if (s.tempId === targetSectionTempId) return { ...s, questions: [...s.questions, ...moving] };
+        return s;
+      });
+      setSections(next);
+      const targetIndex = next.findIndex((s) => s.tempId === targetSectionTempId);
+      setPageIndex(lastPageIndexForSection(next, targetIndex));
+    }
+    setSelected(new Set());
+  }
+
   function pageIndexForSection(sectionIndex: number): number {
     const idx = pages.findIndex((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
     return idx === -1 ? boundedIndex : idx;
@@ -275,6 +342,7 @@ export default function NewSurveyPage() {
     const newSection: SectionData = { tempId: crypto.randomUUID(), title: "", description: "", questions: [] };
     const next = [...sectionsRef.current, newSection];
     setSections(next);
+    setSelected(new Set());
     setPageIndex(buildPages(next).length - 1);
   }
 
@@ -285,6 +353,7 @@ export default function NewSurveyPage() {
   function removeSection(sectionTempId: string) {
     const next = sectionsRef.current.filter((s) => s.tempId !== sectionTempId);
     setSections(next);
+    setSelected(new Set());
     setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
@@ -296,6 +365,7 @@ export default function NewSurveyPage() {
     const next = sectionsRef.current.map((s) =>
       s.tempId === sectionTempId ? { ...s, questions: [...s.questions, newQuestion] } : s);
     setSections(next);
+    setSelected(new Set());
     setPageIndex(buildPages(next).findIndex((p) => p.kind === "section" && p.questions.some((q) => q.tempId === newQuestion.tempId)));
     return newQuestion.tempId;
   }
@@ -464,11 +534,11 @@ export default function NewSurveyPage() {
       </div>
 
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => setPageIndex(0)} />
+        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => goToPage(0)} />
         {sections.map((s, si) => (
           <StepPill key={s.tempId} label={s.title.trim() || `Section ${si + 1}`}
             active={currentPage.kind === "section" && currentPage.sectionIndex === si}
-            onClick={() => setPageIndex(pageIndexForSection(si))} />
+            onClick={() => goToPage(pageIndexForSection(si))} />
         ))}
       </div>
 
@@ -508,7 +578,7 @@ export default function NewSurveyPage() {
               ) : (
                 <div className="space-y-2">
                   {sections.map((s, si) => (
-                    <button key={s.tempId} onClick={() => setPageIndex(pageIndexForSection(si))}
+                    <button key={s.tempId} onClick={() => goToPage(pageIndexForSection(si))}
                       className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 text-left">
                       <div>
                         <p className="text-sm font-medium">{s.title.trim() || `Section ${si + 1}`}</p>
@@ -529,11 +599,50 @@ export default function NewSurveyPage() {
               {sections[currentPage.sectionIndex].title.trim() || `Section ${currentPage.sectionIndex + 1}`} — page {currentPage.pageNumber} of {sectionPageCount(currentPage.sectionIndex)}
             </p>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input type="checkbox" className="rounded" checked={allPageSelected} onChange={toggleSelectAll} />
+              Select all on page
+            </label>
+            <div className="flex-1" />
+            {selectedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{selectedCount} selected</Badge>
+                <Button variant="destructive" size="sm" onClick={() => bulkAction("delete")} className="gap-1">
+                  <Trash2 className="h-3 w-3" /> Delete
+                </Button>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value !== "") {
+                      bulkAction("move", e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="Move selected to section"
+                >
+                  <option value="">Move to section...</option>
+                  {sections.map((s, ti) => (
+                    ti !== currentPage.sectionIndex ? (
+                      <option key={s.tempId} value={s.tempId}>{s.title.trim() || `Section ${ti + 1}`}</option>
+                    ) : null
+                  ))}
+                </select>
+                <Button variant="outline" size="sm" onClick={() => bulkAction("toggleRequired")}>
+                  Toggle Required
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+              </div>
+            )}
+          </div>
           <SectionCard
             section={sections[currentPage.sectionIndex]}
             index={currentPage.sectionIndex}
             questionStart={currentPage.questionStart}
             questions={currentPage.questions}
+            selected={selected}
+            onToggleSelect={toggleSelect}
             onUpdate={updateSection}
             onRemove={() => removeSection(sections[currentPage.sectionIndex].tempId)}
             onAddQuestion={(type) => addQuestionToSection(sections[currentPage.sectionIndex].tempId, type)}
@@ -543,7 +652,7 @@ export default function NewSurveyPage() {
       ) : null}
 
       <div className="flex items-center justify-between pt-2 pb-8">
-        <Button variant="outline" onClick={() => setPageIndex(Math.max(0, boundedIndex - 1))} disabled={boundedIndex === 0}>
+        <Button variant="outline" onClick={() => goToPage(boundedIndex - 1)} disabled={boundedIndex === 0}>
           <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
         <div className="text-xs text-muted-foreground text-center">
@@ -551,7 +660,7 @@ export default function NewSurveyPage() {
           {currentPage.kind === "section" && ` · Section ${currentPage.sectionIndex + 1} of ${sections.length}`}
         </div>
         {boundedIndex < pages.length - 1 ? (
-          <Button onClick={() => setPageIndex(Math.min(pages.length - 1, boundedIndex + 1))}>
+          <Button onClick={() => goToPage(boundedIndex + 1)}>
             Next <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (

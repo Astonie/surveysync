@@ -80,6 +80,7 @@ export default function EditSurveyPage() {
   const [pageIndex, setPageIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const sectionsRef = useRef(sections);
 
   useEffect(() => {
@@ -145,6 +146,65 @@ export default function EditSurveyPage() {
   const currentPage = pages[boundedIndex];
   const progress = pages.length > 0 ? ((boundedIndex + 1) / pages.length) * 100 : 0;
 
+  const pageSelectedKeys = currentPage.kind === "section"
+    ? currentPage.questions.map((q) => {
+        const qi = sections[currentPage.sectionIndex].questions.indexOf(q);
+        return `${currentPage.sectionIndex}:${qi}`;
+      })
+    : [];
+  const allPageSelected = pageSelectedKeys.length > 0 && pageSelectedKeys.every((k) => selected.has(k));
+
+  function goToPage(index: number) {
+    setSelected(new Set());
+    setPageIndex(Math.max(0, Math.min(pages.length - 1, index)));
+  }
+
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageSelectedKeys.forEach((k) => next.delete(k));
+      else pageSelectedKeys.forEach((k) => next.add(k));
+      return next;
+    });
+  }
+
+  function bulkAction(kind: "delete" | "toggleRequired" | "move", targetSection?: number) {
+    if (currentPage.kind !== "section") return;
+    const si = currentPage.sectionIndex;
+    if (!sections[si]) return;
+    const keys = new Set(pageSelectedKeys.filter((k) => selected.has(k)));
+
+    if (kind === "delete") {
+      setSections((prev) => prev.map((s, i) => i === si
+        ? { ...s, questions: s.questions.filter((_, qi) => !keys.has(`${si}:${qi}`)).map((q, j) => ({ ...q, order: j })) }
+        : s));
+    } else if (kind === "toggleRequired") {
+      setSections((prev) => prev.map((s, i) => i === si
+        ? { ...s, questions: s.questions.map((q, qi) => keys.has(`${si}:${qi}`) ? { ...q, required: !q.required } : q) }
+        : s));
+    } else if (kind === "move" && targetSection !== undefined && targetSection !== si) {
+      const moving = sections[si].questions.filter((q, qi) => keys.has(`${si}:${qi}`));
+      if (moving.length === 0) return;
+      const next = sections.map((s, i) => {
+        if (i === si) return { ...s, questions: s.questions.filter((_, qi) => !keys.has(`${si}:${qi}`)).map((q, j) => ({ ...q, order: j })) };
+        if (i === targetSection) return { ...s, questions: s.questions.concat(moving.map((q, j) => ({ ...q, order: s.questions.length + j }))) };
+        return s;
+      });
+      setSections(next);
+      setPageIndex(lastPageIndexForSection(next, targetSection));
+    }
+    setSelected(new Set());
+  }
+
   function pageIndexForSection(sectionIndex: number): number {
     const idx = pages.findIndex((p) => p.kind === "section" && p.sectionIndex === sectionIndex);
     return idx === -1 ? boundedIndex : idx;
@@ -165,12 +225,14 @@ export default function EditSurveyPage() {
     const newSection: SectionData = { title: "", description: "", order: sectionsRef.current.length, questions: [] };
     const next = [...sectionsRef.current, newSection];
     setSections(next);
+    setSelected(new Set());
     setPageIndex(lastPageIndexForSection(next, next.length - 1));
   }
 
   function removeSection(index: number) {
     const next = sectionsRef.current.filter((_, i) => i !== index).map((s, i) => ({ ...s, order: i }));
     setSections(next);
+    setSelected(new Set());
     setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
@@ -180,6 +242,7 @@ export default function EditSurveyPage() {
     if (swapIndex < 0 || swapIndex >= next.length) return;
     [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
     setSections(next.map((s, i) => ({ ...s, order: i })));
+    setSelected(new Set());
     setPageIndex((p) => Math.min(p, buildPages(next).length - 1));
   }
 
@@ -196,10 +259,12 @@ export default function EditSurveyPage() {
     const next = sectionsRef.current.map((s, i) =>
       i === sectionIndex ? { ...s, questions: [...s.questions, q] } : s);
     setSections(next);
+    setSelected(new Set());
     setPageIndex(lastPageIndexForSection(next, sectionIndex));
   }
 
   function removeQuestion(sectionIndex: number, questionIndex: number) {
+    setSelected(new Set());
     setSections((prev) =>
       prev.map((s, i) =>
         i === sectionIndex
@@ -210,6 +275,7 @@ export default function EditSurveyPage() {
   }
 
   function moveQuestion(sectionIndex: number, questionIndex: number, direction: -1 | 1) {
+    setSelected(new Set());
     setSections((prev) =>
       prev.map((s, i) => {
         if (i !== sectionIndex) return s;
@@ -278,6 +344,7 @@ export default function EditSurveyPage() {
     const current = sectionsRef.current;
     const question = current[sourceSection]?.questions[questionIndex];
     if (!question) return;
+    setSelected(new Set());
     const next = current.map((s, i) => {
       if (i === sourceSection) {
         return { ...s, questions: s.questions.filter((_, j) => j !== questionIndex).map((q, j) => ({ ...q, order: j })) };
@@ -371,11 +438,11 @@ export default function EditSurveyPage() {
       </div>
 
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => setPageIndex(0)} />
+        <StepPill label="Survey" active={currentPage.kind === "details"} onClick={() => goToPage(0)} />
         {sections.map((s, si) => (
           <StepPill key={s.id ?? si} label={s.title.trim() || `Section ${si + 1}`}
             active={currentPage.kind === "section" && currentPage.sectionIndex === si}
-            onClick={() => setPageIndex(pageIndexForSection(si))} />
+            onClick={() => goToPage(pageIndexForSection(si))} />
         ))}
       </div>
 
@@ -420,7 +487,7 @@ export default function EditSurveyPage() {
               ) : (
                 <div className="space-y-2">
                   {sections.map((s, si) => (
-                    <button key={s.id ?? si} onClick={() => setPageIndex(pageIndexForSection(si))}
+                    <button key={s.id ?? si} onClick={() => goToPage(pageIndexForSection(si))}
                       className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/50 text-left">
                       <div>
                         <p className="text-sm font-medium">{s.title.trim() || `Section ${si + 1}`}</p>
@@ -467,6 +534,44 @@ export default function EditSurveyPage() {
             </p>
           )}
 
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input type="checkbox" className="rounded" checked={allPageSelected} onChange={toggleSelectAll} />
+              Select all on page
+            </label>
+            <div className="flex-1" />
+            {selected.size > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{selected.size} selected</Badge>
+                <Button variant="destructive" size="sm" onClick={() => bulkAction("delete")} className="gap-1">
+                  <Trash2 className="h-3 w-3" /> Delete
+                </Button>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value !== "") {
+                      bulkAction("move", Number(e.target.value));
+                      e.target.value = "";
+                    }
+                  }}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="Move selected to section"
+                >
+                  <option value="">Move to section...</option>
+                  {sections.map((s, ti) => (
+                    ti !== currentPage.sectionIndex ? (
+                      <option key={ti} value={ti}>{s.title.trim() || `Section ${ti + 1}`}</option>
+                    ) : null
+                  ))}
+                </select>
+                <Button variant="outline" size="sm" onClick={() => bulkAction("toggleRequired")}>
+                  Toggle Required
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+              </div>
+            )}
+          </div>
+
           {currentPage.questions.length === 0 && (
             <div className="text-center py-4 border border-dashed rounded-xl">
               <p className="text-muted-foreground text-sm">No questions on this page yet.</p>
@@ -479,6 +584,13 @@ export default function EditSurveyPage() {
             return (
               <div key={q.id ?? qi} className="border rounded-xl p-4 space-y-3 bg-card">
                 <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={selected.has(`${si}:${qi}`)}
+                    onChange={() => toggleSelect(`${si}:${qi}`)}
+                    title="Select question"
+                  />
                   <Badge variant="secondary">Q{currentPage.questionStart + i}</Badge>
                   <Badge variant="outline">{questionTypeLabels[q.type]}</Badge>
                   <div className="flex-1" />
@@ -555,7 +667,7 @@ export default function EditSurveyPage() {
       ) : null}
 
       <div className="flex items-center justify-between pt-2 pb-8">
-        <Button variant="outline" onClick={() => setPageIndex(Math.max(0, boundedIndex - 1))} disabled={boundedIndex === 0}>
+        <Button variant="outline" onClick={() => goToPage(boundedIndex - 1)} disabled={boundedIndex === 0}>
           <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
         <div className="text-xs text-muted-foreground text-center">
@@ -563,7 +675,7 @@ export default function EditSurveyPage() {
           {currentPage.kind === "section" && ` · Section ${currentPage.sectionIndex + 1} of ${sections.length}`}
         </div>
         {boundedIndex < pages.length - 1 ? (
-          <Button onClick={() => setPageIndex(Math.min(pages.length - 1, boundedIndex + 1))}>
+          <Button onClick={() => goToPage(boundedIndex + 1)}>
             Next <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
