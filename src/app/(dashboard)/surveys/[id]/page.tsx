@@ -180,7 +180,15 @@ export default function SurveyDetailPage() {
             <p className="text-muted-foreground">{survey.description}</p>
           )}
         </div>
-        <Badge variant={sc.badge} className="text-sm">{sc.label}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={sc.badge} className="text-sm">{sc.label}</Badge>
+          <Link href={`/surveys/${survey.id}/edit`}>
+            <Button variant="outline" size="sm" className="gap-1"><Edit className="h-4 w-4" /> Edit Survey</Button>
+          </Link>
+          <Link href={`/surveys/${survey.id}/responses`}>
+            <Button size="sm" className="gap-1"><BarChart3 className="h-4 w-4" /> View Responses ({survey._count?.responses || 0})</Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
@@ -417,15 +425,6 @@ export default function SurveyDetailPage() {
             ))}
         </CardContent>
       </Card>
-
-      <div className="flex justify-end gap-3 pb-8">
-        <Link href={`/surveys/${survey.id}/edit`}>
-          <Button variant="outline" className="gap-2"><Edit className="h-4 w-4" /> Edit Survey</Button>
-        </Link>
-        <Link href={`/surveys/${survey.id}/responses`}>
-          <Button className="gap-2"><BarChart3 className="h-4 w-4" /> View Responses ({survey._count?.responses || 0})</Button>
-        </Link>
-      </div>
     </div>
   );
 }
