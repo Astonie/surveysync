@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 const VALID_STATUSES = ["draft", "active", "paused", "closed"];
 
 interface QuestionInput {
+  id?: string;
   type: string;
   text: string;
   required: boolean;
@@ -13,6 +14,7 @@ interface QuestionInput {
 }
 
 interface SectionInput {
+  id?: string;
   title: string;
   description: string | null;
   order: number;
@@ -34,6 +36,7 @@ export async function GET(
       where: { id },
       include: {
         sections: { include: { questions: true }, orderBy: { order: "asc" } },
+        questions: { orderBy: { order: "asc" } },
         _count: { select: { responses: true } },
       },
     });
@@ -82,7 +85,8 @@ export async function PUT(
 
     if (sections !== undefined) {
       const survey = await prisma.$transaction(async (tx) => {
-        // Delete existing sections and their questions
+        // Delete existing sections and their questions, then recreate with
+        // the same IDs so historical responses stay linked to their questions.
         await tx.section.deleteMany({ where: { surveyId: id } });
         await tx.question.deleteMany({ where: { surveyId: id } });
         return tx.survey.update({
@@ -94,12 +98,15 @@ export async function PUT(
             sections: {
               create: sections.map(
                 (s: SectionInput, sectionIndex: number) => ({
+                  ...(s.id ? { id: s.id } : {}),
                   title: s.title,
                   description: s.description || null,
                   order: s.order ?? sectionIndex,
                   questions: {
                     create: (s.questions || []).map(
                       (q: QuestionInput, questionIndex: number) => ({
+                        ...(q.id ? { id: q.id } : {}),
+                        surveyId: id,
                         type: q.type,
                         text: q.text,
                         required: q.required,
@@ -112,7 +119,7 @@ export async function PUT(
               ),
             },
           },
-          include: { sections: { include: { questions: true } } },
+          include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
         });
       });
       return NextResponse.json(survey);
@@ -125,7 +132,7 @@ export async function PUT(
         description: description !== undefined ? description : existing.description,
         status: status !== undefined ? status : existing.status,
       },
-      include: { sections: { include: { questions: true } } },
+      include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
     });
 
     return NextResponse.json(survey);

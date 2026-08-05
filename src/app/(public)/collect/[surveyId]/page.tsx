@@ -75,8 +75,13 @@ export default function CollectPage() {
           if (res.ok) {
             const data = await res.json();
             setSurvey(data);
+            const sectionsForCache = data.sections && data.sections.length
+              ? data.sections
+              : (data.questions && data.questions.length
+                  ? [{ id: null, title: "", description: null, order: 0, questions: data.questions }]
+                  : []);
             await db.surveys.put({ id: data.id, title: data.title, description: data.description,
-              sections: JSON.stringify(data.sections), status: data.status, syncedAt: new Date().toISOString() });
+              sections: JSON.stringify(sectionsForCache), status: data.status, syncedAt: new Date().toISOString() });
             setLoading(false);
             return;
           }
@@ -84,7 +89,7 @@ export default function CollectPage() {
         const localSurvey = await db.surveys.get(surveyId);
         if (localSurvey) {
           setSurvey({ id: localSurvey.id, title: localSurvey.title, description: localSurvey.description,
-            sections: JSON.parse(localSurvey.sections), status: localSurvey.status });
+            sections: JSON.parse(localSurvey.sections || "[]"), status: localSurvey.status });
         }
       } catch {}
       finally { setLoading(false); }

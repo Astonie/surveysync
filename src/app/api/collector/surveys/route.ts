@@ -15,6 +15,7 @@ export async function GET() {
         survey: {
           include: {
             sections: { include: { questions: true }, orderBy: { order: "asc" } },
+            questions: { orderBy: { order: "asc" } },
             _count: { select: { responses: true } },
             responses: {
               where: { submittedById: user.id },

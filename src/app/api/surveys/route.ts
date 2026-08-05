@@ -10,13 +10,6 @@ interface QuestionInput {
   order: number;
 }
 
-interface SectionInput {
-  title: string;
-  description: string | null;
-  order: number;
-  questions?: QuestionInput[];
-}
-
 export async function GET() {
   try {
     const user = await getSession();
@@ -28,6 +21,7 @@ export async function GET() {
       where: { createdBy: user.id },
       include: {
         sections: { include: { questions: true }, orderBy: { order: "asc" } },
+        questions: { orderBy: { order: "asc" } },
         _count: { select: { responses: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -57,34 +51,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const survey = await prisma.survey.create({
-      data: {
-        title,
-        description: description || null,
-        status: status || "draft",
-        createdBy: user.id,
-        sections: {
-          create: (sections || []).map(
-            (s: SectionInput, sectionIndex: number) => ({
-              title: s.title,
-              description: s.description || null,
-              order: s.order ?? sectionIndex,
-              questions: {
-                create: (s.questions || []).map(
-                  (q: QuestionInput, questionIndex: number) => ({
-                    type: q.type,
-                    text: q.text,
-                    required: q.required,
-                    options: q.options || undefined,
-                    order: q.order ?? questionIndex,
-                  })
-                ),
-              },
-            })
-          ),
+    const survey = await prisma.$transaction(async (tx) => {
+      const created = await tx.survey.create({
+        data: {
+          title,
+          description: description || null,
+          status: status || "draft",
+          createdBy: user.id,
         },
-      },
-      include: { sections: { include: { questions: true } } },
+      });
+
+      for (const [sectionIndex, s] of (sections || []).entries()) {
+        await tx.section.create({
+          data: {
+            surveyId: created.id,
+            title: s.title,
+            description: s.description || null,
+            order: s.order ?? sectionIndex,
+            questions: {
+              create: (s.questions || []).map(
+                (q: QuestionInput, questionIndex: number) => ({
+                  surveyId: created.id,
+                  type: q.type,
+                  text: q.text,
+                  required: q.required,
+                  options: q.options || undefined,
+                  order: q.order ?? questionIndex,
+                })
+              ),
+            },
+          },
+        });
+      }
+
+      return tx.survey.findUnique({
+        where: { id: created.id },
+        include: { sections: { include: { questions: true } } },
+      });
     });
 
     return NextResponse.json(survey, { status: 201 });
