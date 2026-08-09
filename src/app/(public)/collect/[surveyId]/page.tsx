@@ -75,7 +75,21 @@ export default function CollectPage() {
         const res = await fetch("/api/auth/session");
         const data = await res.json();
         setUser(data.user || null);
-      } catch { setUser(null); }
+        if (data.user) {
+          localStorage.setItem("survey-sync:user", JSON.stringify(data.user));
+        }
+      } catch {
+        if (typeof window !== "undefined") {
+          const cached = window.localStorage.getItem("survey-sync:user");
+          if (cached) {
+            try { setUser(JSON.parse(cached)); } catch { setUser(null); }
+          } else {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
+      }
       finally { setAuthChecked(true); }
     }
     checkAuth();
