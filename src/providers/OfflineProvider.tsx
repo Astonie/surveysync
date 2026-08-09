@@ -4,6 +4,14 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 
+async function registerBackgroundSync() {
+  if (!("serviceWorker" in navigator && "SyncManager" in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    void reg.sync.register("survey-sync:responses");
+  } catch {}
+}
+
 interface OfflineContextType {
   isOnline: boolean;
   wasOffline: boolean;
@@ -50,6 +58,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         syncNow();
       }
     }, 30000);
+    void registerBackgroundSync();
 
     return () => clearInterval(interval);
   }, [isOnline, pendingCount, isSyncing, syncNow]);

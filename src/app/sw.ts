@@ -74,6 +74,9 @@ const runtimeCaching = [
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST ?? [],
+  precacheOptions: {
+    navigateFallback: "/offline",
+  },
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
@@ -81,3 +84,72 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+const SyncSelf = self as unknown as {
+  addEventListener(type: "sync", listener: (event: { tag: string; waitUntil(task: Promise<unknown>): void }) => void): void;
+};
+
+interface SyncQueueRecord {
+  id: number;
+  entityType: string;
+  entityId: string;
+  action: string;
+  payload: string;
+  createdAt: string;
+  attempts: number;
+}
+
+const DB_NAME = "survey-sync";
+const STORE_NAME = "syncQueue";
+
+function readSyncQueue(): Promise<SyncQueueRecord[]> {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onsuccess = () => {
+      const tx = request.result.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const getRequest = store.getAll();
+      getRequest.onsuccess = () => resolve(getRequest.result ?? []);
+      getRequest.onerror = () => resolve([]);
+    };
+    request.onerror = () => resolve([]);
+  });
+}
+
+function deleteSyncItem(id: number): Promise<void> {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onsuccess = () => {
+      const tx = request.result.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+    };
+    request.onerror = () => resolve();
+  });
+}
+
+async function replaySyncQueue() {
+  const items = await readSyncQueue();
+  if (items.length === 0) return;
+
+  const res = await fetch("/api/sync/push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+
+  if (!res.ok) throw new Error("Sync failed");
+  const data = (await res.json()) as { syncedIds?: number[] };
+  const syncedIds = data.syncedIds ?? items.filter((i) => i.entityType !== "response").map((i) => i.id);
+
+  for (const id of syncedIds) {
+    await deleteSyncItem(id);
+  }
+}
+
+SyncSelf.addEventListener("sync", (event) => {
+  if (event.tag === "survey-sync:responses") {
+    event.waitUntil(replaySyncQueue());
+  }
+});
