@@ -60,6 +60,9 @@ export async function PUT(
       return NextResponse.json({ error: firstZodError(parsed.error) }, { status: 400 });
     }
     const { title, description, sections, status } = parsed.data;
+    // `surveyInputSchema` applies `.default()`s (e.g. status: "draft") even under
+    // `.partial()`, so only apply fields the client actually sent.
+    const sent = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
 
     const existing = await prisma.survey.findUnique({ where: { id } });
     if (!existing) {
@@ -69,7 +72,7 @@ export async function PUT(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (sections !== undefined) {
+    if (sent("sections")) {
       const survey = await prisma.$transaction(async (tx) => {
         // Delete existing sections and their questions, then recreate with
         // the same IDs so historical responses stay linked to their questions.
@@ -78,11 +81,11 @@ export async function PUT(
         return tx.survey.update({
           where: { id },
           data: {
-            title: title ?? existing.title,
-            description: description !== undefined ? description : existing.description,
-            status: status !== undefined ? status : existing.status,
+            ...(sent("title") && title !== undefined ? { title } : {}),
+            ...(sent("description") ? { description } : {}),
+            ...(sent("status") && status !== undefined ? { status } : {}),
             sections: {
-              create: sections.map((s, sectionIndex) => ({
+              create: sections!.map((s, sectionIndex) => ({
                   ...(s.id ? { id: s.id } : {}),
                   title: s.title,
                   description: s.description || null,
@@ -110,9 +113,9 @@ export async function PUT(
     const survey = await prisma.survey.update({
       where: { id },
       data: {
-        title: title ?? existing.title,
-        description: description !== undefined ? description : existing.description,
-        status: status !== undefined ? status : existing.status,
+        ...(sent("title") && title !== undefined ? { title } : {}),
+        ...(sent("description") ? { description } : {}),
+        ...(sent("status") && status !== undefined ? { status } : {}),
       },
       include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
     });
