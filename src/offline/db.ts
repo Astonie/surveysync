@@ -17,7 +17,20 @@ interface OfflineResponseRecord {
   synced: boolean;
 }
 
-export type { OfflineSurveyRecord, OfflineResponseRecord };
+interface SessionRecord {
+  key: "current";
+  user: string;
+  expiresAt: string;
+  updatedAt: string;
+}
+
+interface CacheRecord {
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
+export type { OfflineSurveyRecord, OfflineResponseRecord, SessionRecord, CacheRecord };
 
 interface SyncQueueRecord {
   id?: number;
@@ -33,6 +46,8 @@ class SurveySyncDB extends Dexie {
   surveys!: Table<OfflineSurveyRecord>;
   responses!: Table<OfflineResponseRecord>;
   syncQueue!: Table<SyncQueueRecord>;
+  session!: Table<SessionRecord>;
+  cache!: Table<CacheRecord>;
 
   constructor() {
     super("survey-sync");
@@ -40,6 +55,13 @@ class SurveySyncDB extends Dexie {
       surveys: "id, status",
       responses: "id, surveyId, synced",
       syncQueue: "++id, entityType, entityId",
+    });
+    this.version(2).stores({
+      surveys: "id, status",
+      responses: "id, surveyId, synced",
+      syncQueue: "++id, entityType, entityId",
+      session: "key",
+      cache: "key",
     });
   }
 }

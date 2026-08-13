@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight, Plus, Trash2, MoveUp, MoveDown, Save, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
+import { fetchCached, getCachedJson, invalidateCache } from "@/lib/offline-cache";
 
 type QuestionType = "MULTIPLE_CHOICE" | "CHECKBOX" | "TEXT_INPUT" | "RATING_SCALE" | "DROPDOWN" | "DATE_INPUT";
 
@@ -59,6 +60,13 @@ interface RawSection {
   questions: RawQuestion[];
 }
 
+interface SurveyData {
+  title: string;
+  description: string | null;
+  sections: RawSection[];
+  questions: RawQuestion[];
+}
+
 type BuilderPage =
   | { kind: "details" }
   | { kind: "section"; sectionIndex: number; pageNumber: number; questionStart: number; questions: QuestionData[] };
@@ -91,14 +99,39 @@ export default function EditSurveyPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/surveys/${params.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTitle(data.title);
-          setDescription(data.description || "");
-          const loadedSections = (data.sections && data.sections.length > 0
-            ? (data.sections as RawSection[])
-            : [{ id: undefined, title: "", description: null, order: 0, questions: (data.questions || []) as RawQuestion[] }]
+        const data = await fetchCached<SurveyData>(`/api/surveys/${params.id}`);
+        setTitle(data.title);
+        setDescription(data.description || "");
+        const loadedSections = (data.sections && data.sections.length > 0
+          ? data.sections
+          : [{ id: undefined, title: "", description: null, order: 0, questions: data.questions || [] }]
+        )
+          .sort((a, b) => a.order - b.order)
+          .map((s: RawSection) => ({
+            id: s.id,
+            title: s.title || "",
+            description: s.description || "",
+            order: s.order ?? 0,
+            questions: (s.questions || [])
+              .sort((a, b) => a.order - b.order)
+              .map((q: RawQuestion) => ({
+                id: q.id,
+                type: q.type,
+                text: q.text,
+                required: q.required,
+                options: q.options || [],
+                order: q.order,
+              })),
+          }));
+        setSections(loadedSections);
+      } catch {
+        const cached = await getCachedJson<SurveyData>(`/api/surveys/${params.id}`);
+        if (cached) {
+          setTitle(cached.title);
+          setDescription(cached.description || "");
+          const loadedSections = (cached.sections && cached.sections.length > 0
+            ? cached.sections
+            : [{ id: undefined, title: "", description: null, order: 0, questions: cached.questions || [] }]
           )
             .sort((a, b) => a.order - b.order)
             .map((s: RawSection) => ({
@@ -118,13 +151,15 @@ export default function EditSurveyPage() {
                 })),
             }));
           setSections(loadedSections);
+        } else {
+          router.push("/surveys");
         }
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [params.id]);
+  }, [params.id, router]);
 
   function buildPages(secs: SectionData[]): BuilderPage[] {
     const result: BuilderPage[] = [{ kind: "details" }];
@@ -400,6 +435,8 @@ export default function EditSurveyPage() {
       });
 
       if (!res.ok) throw new Error("Failed to save");
+      void invalidateCache(`/api/surveys/${params.id}`);
+      void invalidateCache("/api/surveys");
       toast.success("Survey updated");
       router.push(`/surveys/${params.id}`);
     } catch {

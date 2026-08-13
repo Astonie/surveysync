@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/shared/Navbar";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { OfflineProvider } from "@/providers/OfflineProvider";
+import { cacheSession, getCachedSession } from "@/lib/offline-cache";
 
 export default function DashboardLayout({
   children,
@@ -15,18 +16,26 @@ export default function DashboardLayout({
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/session")
-      .then((r) => r.json())
-      .then((data) => {
+    async function check() {
+      try {
+        const res = await fetch("/api/auth/session");
+        const data = await res.json();
         if (!data.user) {
           router.push("/login");
         } else {
+          void cacheSession(data.user);
           setChecking(false);
         }
-      })
-      .catch(() => {
-        router.push("/login");
-      });
+      } catch {
+        const cached = await getCachedSession();
+        if (cached?.user) {
+          setChecking(false);
+        } else {
+          router.push("/login");
+        }
+      }
+    }
+    check();
   }, [router]);
 
   if (checking) {

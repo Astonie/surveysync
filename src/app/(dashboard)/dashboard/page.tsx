@@ -9,6 +9,7 @@ import { FilePlus, List, Users, WifiOff, ClipboardList, Pause, Play } from "luci
 import { useOffline } from "@/providers/OfflineProvider";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetchCached } from "@/lib/offline-cache";
 
 interface SurveySummary {
   id: string;
@@ -40,24 +41,14 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [ownedRes, assignedRes, sessionsRes] = await Promise.all([
-          fetch("/api/surveys"),
-          fetch("/api/collector/surveys"),
-          fetch("/api/collector/sessions"),
+        const [owned, assigned, sessions] = await Promise.all([
+          fetchCached<{ surveys: SurveySummary[] }>("/api/surveys").catch(() => ({ surveys: [] })),
+          fetchCached<{ surveys: SurveySummary[] }>("/api/collector/surveys").catch(() => ({ surveys: [] })),
+          fetchCached<{ sessions: CollectorSession[] }>("/api/collector/sessions").catch(() => ({ sessions: [] })),
         ]);
-        if (ownedRes.ok) {
-          const data = await ownedRes.json();
-          setOwnedSurveys(data.surveys || []);
-        }
-        if (assignedRes.ok) {
-          const data = await assignedRes.json();
-          setAssignedSurveys(data.surveys || []);
-        }
-        if (sessionsRes.ok) {
-          const data = await sessionsRes.json();
-          setCollectorSessions(data.sessions || []);
-        }
-      } catch {
+        setOwnedSurveys(owned.surveys || []);
+        setAssignedSurveys(assigned.surveys || []);
+        setCollectorSessions(sessions.sessions || []);
       } finally {
         setLoading(false);
       }

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetchCached, getCachedJson, invalidateCache } from "@/lib/offline-cache";
 
 interface SurveySummary {
   id: string;
@@ -39,19 +40,18 @@ export default function SurveysListPage() {
   const [deleteTarget, setDeleteTarget] = useState<SurveySummary | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function loadSurveys() {
-    try {
-      const res = await fetch("/api/surveys");
-      if (res.ok) {
-        const data = await res.json();
-        setSurveys(data.surveys || []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
+    async function loadSurveys() {
+      try {
+        const data = await fetchCached<{ surveys: SurveySummary[] }>("/api/surveys");
+        setSurveys(data.surveys || []);
+      } catch {
+        const cached = await getCachedJson<{ surveys: SurveySummary[] }>("/api/surveys");
+        setSurveys(cached?.surveys || []);
+      } finally {
+        setLoading(false);
+      }
+    }
     loadSurveys();
   }, []);
 
@@ -62,6 +62,7 @@ export default function SurveysListPage() {
       const res = await fetch(`/api/surveys/${deleteTarget.id}`, { method: "DELETE" });
       if (res.ok) {
         setSurveys((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+        void invalidateCache("/api/surveys");
         toast.success("Survey deleted");
       } else {
         toast.error("Failed to delete survey");

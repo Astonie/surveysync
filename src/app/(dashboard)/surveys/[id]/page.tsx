@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import { SURVEY_STATUS_CONFIG, type SurveyStatus } from "@/types";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { invalidateCache } from "@/lib/offline-cache";
+import { fetchCached, getCachedJson } from "@/lib/offline-cache";
 
 interface SurveyQuestion {
   id: string;
@@ -102,29 +104,22 @@ export default function SurveyDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [surveyRes, accessRes, inviteRes, sessionsRes] = await Promise.all([
-          fetch(`/api/surveys/${params.id}`),
-          fetch(`/api/surveys/${params.id}/access`),
-          fetch(`/api/surveys/${params.id}/invite`),
-          fetch(`/api/surveys/${params.id}/sessions`),
+        const [surveyData, accessData, inviteData, sessionsData] = await Promise.all([
+          fetchCached<SurveyData>(`/api/surveys/${params.id}`),
+          fetchCached<{ access: Collector[] }>(`/api/surveys/${params.id}/access`).catch(() => ({ access: [] })),
+          fetchCached<{ invitations: Invitation[] }>(`/api/surveys/${params.id}/invite`).catch(() => ({ invitations: [] })),
+          fetchCached<{ sessions: SessionRecord[] }>(`/api/surveys/${params.id}/sessions`).catch(() => ({ sessions: [] })),
         ]);
-        if (surveyRes.ok) {
-          setSurvey(await surveyRes.json());
+        setSurvey(surveyData);
+        setCollectors(accessData.access || []);
+        setInvitations(inviteData.invitations || []);
+        setSessions(sessionsData.sessions || []);
+      } catch {
+        const cachedSurvey = await getCachedJson<SurveyData>(`/api/surveys/${params.id}`);
+        if (cachedSurvey) {
+          setSurvey(cachedSurvey);
         } else {
           router.push("/surveys");
-          return;
-        }
-        if (accessRes.ok) {
-          const data = await accessRes.json();
-          setCollectors(data.access || []);
-        }
-        if (inviteRes.ok) {
-          const data = await inviteRes.json();
-          setInvitations(data.invitations || []);
-        }
-        if (sessionsRes.ok) {
-          const data = await sessionsRes.json();
-          setSessions(data.sessions || []);
         }
       } finally {
         setLoading(false);
@@ -156,6 +151,8 @@ export default function SurveyDetailPage() {
       });
       if (res.ok) {
         setSurvey({ ...survey, status: newStatus });
+        void invalidateCache(`/api/surveys/${survey.id}`);
+        void invalidateCache("/api/surveys");
         toast.success(`Survey ${newStatus}`);
       } else {
         toast.error("Failed to update survey status");

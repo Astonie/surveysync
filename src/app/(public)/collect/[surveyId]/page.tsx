@@ -7,6 +7,7 @@ import { useOffline } from "@/providers/OfflineProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cacheSession, getCachedSession, fetchCached } from "@/lib/offline-cache";
 import {
   WifiOff, Wifi, CheckCircle, ArrowLeft, ArrowRight, Send, Loader2, LogIn,
   Pause, Play, StopCircle, Cloud, CloudOff, Clock,
@@ -76,19 +77,11 @@ export default function CollectPage() {
         const data = await res.json();
         setUser(data.user || null);
         if (data.user) {
-          localStorage.setItem("survey-sync:user", JSON.stringify(data.user));
+          await cacheSession({ id: data.user.id, email: data.user.email, name: data.user.name });
         }
       } catch {
-        if (typeof window !== "undefined") {
-          const cached = window.localStorage.getItem("survey-sync:user");
-          if (cached) {
-            try { setUser(JSON.parse(cached)); } catch { setUser(null); }
-          } else {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
+        const cached = await getCachedSession();
+        setUser(cached?.user ?? null);
       }
       finally { setAuthChecked(true); }
     }
@@ -99,29 +92,22 @@ export default function CollectPage() {
     if (!authChecked || !user) return;
     async function loadSurvey() {
       try {
-        if (navigator.onLine) {
-          const res = await fetch(`/api/surveys/${surveyId}`);
-          if (res.ok) {
-            const data = await res.json();
-            setSurvey(data);
-            const sectionsForCache = data.sections && data.sections.length
-              ? data.sections
-              : (data.questions && data.questions.length
-                  ? [{ id: null, title: "", description: null, order: 0, questions: data.questions }]
-                  : []);
-            await db.surveys.put({ id: data.id, title: data.title, description: data.description,
-              sections: JSON.stringify(sectionsForCache), status: data.status, syncedAt: new Date().toISOString() });
-            setLoading(false);
-            return;
-          }
-        }
+        const data = await fetchCached<Survey>(`/api/surveys/${surveyId}`);
+        setSurvey(data);
+        const sectionsForCache = data.sections && data.sections.length
+          ? data.sections
+          : (data.questions && data.questions.length
+              ? [{ id: null, title: "", description: null, order: 0, questions: data.questions }]
+              : []);
+        await db.surveys.put({ id: data.id, title: data.title, description: data.description,
+          sections: JSON.stringify(sectionsForCache), status: data.status, syncedAt: new Date().toISOString() });
+      } catch {
         const localSurvey = await db.surveys.get(surveyId);
         if (localSurvey) {
           setSurvey({ id: localSurvey.id, title: localSurvey.title, description: localSurvey.description,
             sections: JSON.parse(localSurvey.sections || "[]"), status: localSurvey.status });
         }
-      } catch {}
-      finally { setLoading(false); }
+      } finally { setLoading(false); }
     }
     loadSurvey();
   }, [surveyId, authChecked, user]);
