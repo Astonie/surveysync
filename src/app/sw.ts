@@ -73,7 +73,7 @@ const runtimeCaching = [
 ];
 
 const serwist = new Serwist({
-  precacheEntries: self.__SW_MANIFEST ?? [],
+  precacheEntries: [...(self.__SW_MANIFEST ?? []), "/offline"],
   precacheOptions: {
     navigateFallback: "/offline",
   },
