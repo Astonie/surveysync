@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 import {
   BarChart3, Wifi, CheckCircle, ArrowRight, Menu, X, Globe,
   GraduationCap, Building2, HeartPulse, TrendingUp, Microscope,
@@ -11,7 +12,12 @@ import {
   Lock, FileText, Database,
 } from "lucide-react";
 
-function Navbar() {
+interface LandingUser {
+  name: string | null;
+  email: string;
+}
+
+function Navbar({ user }: { user: LandingUser | null }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const links = [
@@ -38,12 +44,29 @@ function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/login">
-            <Button variant="ghost" size="sm">Sign In</Button>
-          </Link>
-          <Link href="/login?register=true">
-            <Button size="sm" className="gap-1">Start a Study <ArrowRight className="h-3.5 w-3.5" /></Button>
-          </Link>
+          <ThemeToggle />
+          {user ? (
+            <>
+              <Link href="/profile" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-xs">
+                  {(user.name || user.email).split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                </div>
+                <span className="hidden sm:inline">{user.name || user.email}</span>
+              </Link>
+              <Link href="/dashboard">
+                <Button size="sm">Dashboard</Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login">
+                <Button variant="ghost" size="sm">Sign In</Button>
+              </Link>
+              <Link href="/login?register=true">
+                <Button size="sm" className="gap-1">Start a Study <ArrowRight className="h-3.5 w-3.5" /></Button>
+              </Link>
+            </>
+          )}
         </div>
 
         <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
@@ -59,12 +82,21 @@ function Navbar() {
             </a>
           ))}
           <div className="pt-2 flex flex-col gap-2">
-            <Link href="/login" onClick={() => setMobileOpen(false)}>
-              <Button variant="outline" className="w-full">Sign In</Button>
-            </Link>
-            <Link href="/login?register=true" onClick={() => setMobileOpen(false)}>
-              <Button className="w-full">Start a Study</Button>
-            </Link>
+            <ThemeToggle />
+            {user ? (
+              <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
+                <Button className="w-full">Dashboard</Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setMobileOpen(false)}>
+                  <Button variant="outline" className="w-full">Sign In</Button>
+                </Link>
+                <Link href="/login?register=true" onClick={() => setMobileOpen(false)}>
+                  <Button className="w-full">Start a Study</Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -223,9 +255,18 @@ const steps = [
 ];
 
 export default function LandingPage() {
+  const [user, setUser] = useState<LandingUser | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((data) => setUser(data.user ?? null))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen">
-      <Navbar />
+      <Navbar user={user} />
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -247,9 +288,9 @@ export default function LandingPage() {
                 organization can trust.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <Link href="/login?register=true">
+                <Link href={user ? "/dashboard" : "/login?register=true"}>
                   <Button size="lg" className="gap-2 text-base px-8">
-                    Start a Study Free <ArrowRight className="h-4 w-4" />
+                    {user ? "Go to Dashboard" : "Start a Study Free"} <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
                 <a href="#solutions">
@@ -411,9 +452,9 @@ export default function LandingPage() {
                 </ul>
               </div>
               <div className="flex flex-col gap-3 md:items-end">
-                <Link href="/login?register=true" className="w-full md:w-auto">
+                <Link href={user ? "/dashboard" : "/login?register=true"} className="w-full md:w-auto">
                   <Button size="lg" variant="secondary" className="gap-2 text-base px-8 w-full md:w-auto">
-                    Start Your Next Study <ArrowRight className="h-4 w-4" />
+                    {user ? "Go to Dashboard" : "Start Your Next Study"} <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
                 <a href="https://github.com/Astonie/surveysync" target="_blank" rel="noopener noreferrer" className="w-full md:w-auto">

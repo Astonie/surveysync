@@ -7,6 +7,7 @@ import { useOffline } from "@/providers/OfflineProvider";
 import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff, BarChart3, LogOut } from "lucide-react";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { clearSessionCache } from "@/lib/offline-cache";
 
 export function Navbar() {
   const { isOnline, pendingCount, isSyncing } = useOffline();
@@ -24,7 +25,12 @@ export function Navbar() {
   }, []);
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // still clear the local session so signing out works offline
+    }
+    await clearSessionCache();
     router.push("/login");
     router.refresh();
   }
