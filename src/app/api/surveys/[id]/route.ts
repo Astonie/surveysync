@@ -123,7 +123,11 @@ export async function PUT(
     return NextResponse.json(survey);
   } catch (error) {
     console.error("Failed to update survey:", error);
-    return NextResponse.json({ error: "Failed to update survey" }, { status: 500 });
+    const detail =
+      error instanceof Error
+        ? { message: error.message, name: error.name, ...(error as any).code ? { code: (error as any).code } : {} }
+        : String(error);
+    return NextResponse.json({ error: "Failed to update survey", detail }, { status: 500 });
   }
 }
 
