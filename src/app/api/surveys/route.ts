@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { surveyInputSchema, firstZodError } from "@/lib/validation";
+import type { Prisma } from "@prisma/client";
 
 export async function GET() {
   try {
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
           type: string;
           text: string;
           required: boolean;
-          options?: unknown;
+          options?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
           order: number;
         }> = [];
         for (const [sectionIndex, s] of (sections || []).entries()) {
