@@ -73,40 +73,69 @@ export async function PUT(
     }
 
     if (sent("sections")) {
-      const survey = await prisma.$transaction(async (tx) => {
-        // Delete existing sections and their questions, then recreate with
-        // the same IDs so historical responses stay linked to their questions.
-        await tx.section.deleteMany({ where: { surveyId: id } });
-        await tx.question.deleteMany({ where: { surveyId: id } });
-        return tx.survey.update({
-          where: { id },
-          data: {
-            ...(sent("title") && title !== undefined ? { title } : {}),
-            ...(sent("description") ? { description } : {}),
-            ...(sent("status") && status !== undefined ? { status } : {}),
-            sections: {
-              create: sections!.map((s, sectionIndex) => ({
-                  ...(s.id ? { id: s.id } : {}),
-                  title: s.title,
-                  description: s.description || null,
-                  order: s.order ?? sectionIndex,
-                  questions: {
-                    create: s.questions.map((q, questionIndex) => ({
-                      ...(q.id ? { id: q.id } : {}),
-                      surveyId: id,
-                      type: q.type,
-                      text: q.text,
-                      required: q.required,
-                      options: q.options || undefined,
-                      order: q.order ?? questionIndex,
-                    })),
-                  },
-                })),
+      const survey = await prisma.$transaction(
+        async (tx) => {
+          await tx.section.deleteMany({ where: { surveyId: id } });
+          await tx.question.deleteMany({ where: { surveyId: id } });
+
+          await tx.survey.update({
+            where: { id },
+            data: {
+              ...(sent("title") && title !== undefined ? { title } : {}),
+              ...(sent("description") ? { description } : {}),
+              ...(sent("status") && status !== undefined ? { status } : {}),
             },
-          },
-          include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
-        });
-      });
+          });
+
+          const sectionIds: Record<number, string> = {};
+          for (const [sectionIndex, s] of sections!.entries()) {
+            const sec = await tx.section.create({
+              data: {
+                ...(s.id ? { id: s.id } : {}),
+                surveyId: id,
+                title: s.title,
+                description: s.description || null,
+                order: s.order ?? sectionIndex,
+              },
+            });
+            sectionIds[sectionIndex] = sec.id;
+          }
+
+          const allQuestions: Array<{
+            id?: string;
+            surveyId: string;
+            sectionId: string;
+            type: string;
+            text: string;
+            required: boolean;
+            options?: unknown;
+            order: number;
+          }> = [];
+          for (const [sectionIndex, s] of sections!.entries()) {
+            for (const [questionIndex, q] of s.questions.entries()) {
+              allQuestions.push({
+                ...(q.id ? { id: q.id } : {}),
+                surveyId: id,
+                sectionId: sectionIds[sectionIndex],
+                type: q.type,
+                text: q.text,
+                required: q.required,
+                ...(q.options ? { options: q.options } : {}),
+                order: q.order ?? questionIndex,
+              });
+            }
+          }
+          if (allQuestions.length > 0) {
+            await tx.question.createMany({ data: allQuestions });
+          }
+
+          return tx.survey.findUnique({
+            where: { id },
+            include: { sections: { include: { questions: true } }, questions: { orderBy: { order: "asc" } } },
+          });
+        },
+        { timeout: 30_000 }
+      );
       return NextResponse.json(survey);
     }
 

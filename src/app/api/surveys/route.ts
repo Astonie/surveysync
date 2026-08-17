@@ -41,44 +41,63 @@ export async function POST(request: NextRequest) {
     }
     const { title, description, sections, status } = parsed.data;
 
-    const survey = await prisma.$transaction(async (tx) => {
-      const created = await tx.survey.create({
-        data: {
-          title,
-          description: description || null,
-          status: status || "draft",
-          createdBy: user.id,
-        },
-      });
-
-      for (const [sectionIndex, s] of (sections || []).entries()) {
-        await tx.section.create({
+    const survey = await prisma.$transaction(
+      async (tx) => {
+        const created = await tx.survey.create({
           data: {
-            surveyId: created.id,
-            title: s.title,
-            description: s.description || null,
-            order: s.order ?? sectionIndex,
-            questions: {
-              create: s.questions.map(
-                (q, questionIndex) => ({
-                  surveyId: created.id,
-                  type: q.type,
-                  text: q.text,
-                  required: q.required,
-                  options: q.options || undefined,
-                  order: q.order ?? questionIndex,
-                })
-              ),
-            },
+            title,
+            description: description || null,
+            status: status || "draft",
+            createdBy: user.id,
           },
         });
-      }
 
-      return tx.survey.findUnique({
-        where: { id: created.id },
-        include: { sections: { include: { questions: true } } },
-      });
-    });
+        const sectionIds: Record<number, string> = {};
+        for (const [sectionIndex, s] of (sections || []).entries()) {
+          const sec = await tx.section.create({
+            data: {
+              surveyId: created.id,
+              title: s.title,
+              description: s.description || null,
+              order: s.order ?? sectionIndex,
+            },
+          });
+          sectionIds[sectionIndex] = sec.id;
+        }
+
+        const allQuestions: Array<{
+          surveyId: string;
+          sectionId: string;
+          type: string;
+          text: string;
+          required: boolean;
+          options?: unknown;
+          order: number;
+        }> = [];
+        for (const [sectionIndex, s] of (sections || []).entries()) {
+          for (const [questionIndex, q] of s.questions.entries()) {
+            allQuestions.push({
+              surveyId: created.id,
+              sectionId: sectionIds[sectionIndex],
+              type: q.type,
+              text: q.text,
+              required: q.required,
+              ...(q.options ? { options: q.options } : {}),
+              order: q.order ?? questionIndex,
+            });
+          }
+        }
+        if (allQuestions.length > 0) {
+          await tx.question.createMany({ data: allQuestions });
+        }
+
+        return tx.survey.findUnique({
+          where: { id: created.id },
+          include: { sections: { include: { questions: true } } },
+        });
+      },
+      { timeout: 30_000 }
+    );
 
     return NextResponse.json(survey, { status: 201 });
   } catch (error) {
