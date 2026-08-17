@@ -103,12 +103,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(survey, { status: 201 });
   } catch (error) {
     console.error("Failed to create survey:", error);
-    const detail =
-      error instanceof Error
-        ? { message: error.message, name: error.name, ...(error as any).code ? { code: (error as any).code } : {} }
-        : String(error);
     return NextResponse.json(
-      { error: "Failed to create survey", detail },
+      { error: "Failed to create survey" },
       { status: 500 }
     );
   }
